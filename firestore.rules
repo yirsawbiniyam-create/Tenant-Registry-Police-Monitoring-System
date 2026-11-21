@@ -1,0 +1,600 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Security Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isRootAdminEmail() {
+      return isVerifiedEmail() && request.auth.token.email == 'yirsawbiniyam@gmail.com';
+    }
+
+    function isAdmin() {
+      return isRootAdminEmail() || (
+        isVerifiedEmail() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isPolice() {
+      return isAdmin() || (
+        isVerifiedEmail() &&
+        request.auth.token.email is string &&
+        exists(/databases/$(database)/documents/police_emails/$(request.auth.token.email))
+      );
+    }
+
+    function isStringMax(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isNonEmptyStringMax(val, maxLen) {
+      return val is string && val.size() >= 1 && val.size() <= maxLen;
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'fullName', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'fullName', 'createdAt']) &&
+        isValidId(data.uid) &&
+        isNonEmptyStringMax(data.email, 160) &&
+        isNonEmptyStringMax(data.fullName, 150) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidAdminCredential(data) {
+      return data.keys().hasAll([
+          'credId', 'username', 'passwordHash', 'passwordSalt',
+          'isDefaultPassword', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'credId', 'username', 'passwordHash', 'passwordSalt',
+          'isDefaultPassword', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.credId) &&
+        isNonEmptyStringMax(data.username, 60) &&
+        data.username.matches('^[a-zA-Z0-9_.\\-]+$') &&
+        isNonEmptyStringMax(data.passwordHash, 128) &&
+        isNonEmptyStringMax(data.passwordSalt, 64) &&
+        data.isDefaultPassword is bool &&
+        isValidId(data.updatedByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBrandingSetting(data) {
+      return data.keys().hasAll(['commissionName', 'logoDataUrl', 'updatedByUid', 'updatedAt']) &&
+        data.keys().hasOnly(['commissionName', 'subtitle', 'logoDataUrl', 'updatedByUid', 'updatedAt']) &&
+        isNonEmptyStringMax(data.commissionName, 200) &&
+        (!('subtitle' in data) || isStringMax(data.subtitle, 200)) &&
+        isNonEmptyStringMax(data.logoDataUrl, 450000) &&
+        isValidId(data.updatedByUid) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidJurisdiction(data) {
+      return data.keys().hasAll(['id', 'city', 'woreda', 'kebele', 'createdByUid', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'city', 'woreda', 'kebele', 'createdByUid', 'createdAt']) &&
+        isValidId(data.id) &&
+        isNonEmptyStringMax(data.city, 100) &&
+        isNonEmptyStringMax(data.woreda, 100) &&
+        isNonEmptyStringMax(data.kebele, 100) &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidPoliceEmailBinding(data) {
+      return data.keys().hasAll(['email', 'officerId', 'active', 'createdByUid', 'createdAt']) &&
+        data.keys().hasOnly(['email', 'officerId', 'active', 'createdByUid', 'createdAt']) &&
+        isNonEmptyStringMax(data.email, 160) &&
+        isValidId(data.officerId) &&
+        data.active is bool &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidPoliceOfficer(data) {
+      return data.keys().hasAll([
+          'officerId', 'fullName', 'rank', 'badgeNumber', 'phone', 'username',
+          'passwordHash', 'passwordSalt', 'jurisdictionLevel', 'city', 'woreda',
+          'kebele', 'active', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'officerId', 'fullName', 'rank', 'badgeNumber', 'phone', 'username',
+          'officerEmail', 'passwordHash', 'passwordSalt', 'jurisdictionLevel',
+          'city', 'woreda', 'kebele', 'active', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.officerId) &&
+        isNonEmptyStringMax(data.fullName, 150) &&
+        isNonEmptyStringMax(data.rank, 80) &&
+        isNonEmptyStringMax(data.badgeNumber, 60) &&
+        isNonEmptyStringMax(data.phone, 30) &&
+        isNonEmptyStringMax(data.username, 60) &&
+        data.username.matches('^[a-zA-Z0-9_.\\-]+$') &&
+        (!('officerEmail' in data) || isStringMax(data.officerEmail, 160)) &&
+        isNonEmptyStringMax(data.passwordHash, 128) &&
+        isNonEmptyStringMax(data.passwordSalt, 64) &&
+        data.jurisdictionLevel in ['regional', 'city', 'woreda', 'kebele'] &&
+        isNonEmptyStringMax(data.city, 100) &&
+        isStringMax(data.woreda, 100) &&
+        isStringMax(data.kebele, 100) &&
+        data.active is bool &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidLandlord(data) {
+      return data.keys().hasAll([
+          'landlordId', 'ownerUid', 'fullName', 'phone', 'city', 'woreda',
+          'kebele', 'houseNumber', 'roomCount', 'faydaId', 'idFrontImage',
+          'idBackImage', 'passwordHash', 'passwordSalt', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'landlordId', 'ownerUid', 'fullName', 'phone', 'city', 'woreda',
+          'kebele', 'houseNumber', 'roomCount', 'faydaId', 'idFrontImage',
+          'idBackImage', 'passwordHash', 'passwordSalt', 'status',
+          'replacedByLandlordId', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.landlordId) &&
+        isValidId(data.ownerUid) &&
+        isNonEmptyStringMax(data.fullName, 150) &&
+        isNonEmptyStringMax(data.phone, 30) &&
+        isNonEmptyStringMax(data.city, 100) &&
+        isNonEmptyStringMax(data.woreda, 100) &&
+        isNonEmptyStringMax(data.kebele, 100) &&
+        isNonEmptyStringMax(data.houseNumber, 60) &&
+        data.roomCount is int && data.roomCount >= 1 && data.roomCount <= 500 &&
+        isNonEmptyStringMax(data.faydaId, 60) &&
+        isNonEmptyStringMax(data.idFrontImage, 350000) &&
+        isNonEmptyStringMax(data.idBackImage, 350000) &&
+        isNonEmptyStringMax(data.passwordHash, 128) &&
+        isNonEmptyStringMax(data.passwordSalt, 64) &&
+        data.status in ['active', 'replaced', 'suspended'] &&
+        (!('replacedByLandlordId' in data) || isStringMax(data.replacedByLandlordId, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCoResidentsList(listVal) {
+      return listVal is list &&
+        listVal.size() <= 20 &&
+        (listVal.size() == 0 || (listVal[0] is string && listVal[0].size() <= 150));
+    }
+
+    function isValidTenant(data) {
+      return data.keys().hasAll([
+          'tenantId', 'landlordId', 'landlordUid', 'landlordName', 'landlordPhone',
+          'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel', 'fullName',
+          'phone', 'maritalStatus', 'livingArrangement', 'coResidents',
+          'occupation', 'isPoliceTenant', 'idType', 'idNumber',
+          'idFrontImage', 'idBackImage', 'moveInDate', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'tenantId', 'landlordId', 'landlordUid', 'landlordName', 'landlordPhone',
+          'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel', 'fullName',
+          'phone', 'maritalStatus', 'livingArrangement', 'coResidents',
+          'occupation', 'isPoliceTenant', 'idType', 'idNumber',
+          'idFrontImage', 'idBackImage', 'portraitImage', 'moveInDate',
+          'status', 'replacedTenantId', 'replacedTenantName', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.tenantId) &&
+        isValidId(data.landlordId) &&
+        isValidId(data.landlordUid) &&
+        isNonEmptyStringMax(data.landlordName, 150) &&
+        isNonEmptyStringMax(data.landlordPhone, 30) &&
+        isNonEmptyStringMax(data.city, 100) &&
+        isNonEmptyStringMax(data.woreda, 100) &&
+        isNonEmptyStringMax(data.kebele, 100) &&
+        isNonEmptyStringMax(data.houseNumber, 60) &&
+        isNonEmptyStringMax(data.roomLabel, 60) &&
+        isNonEmptyStringMax(data.fullName, 150) &&
+        isNonEmptyStringMax(data.phone, 30) &&
+        data.maritalStatus in ['married', 'single'] &&
+        data.livingArrangement in ['alone', 'with_others'] &&
+        isValidCoResidentsList(data.coResidents) &&
+        isNonEmptyStringMax(data.occupation, 120) &&
+        data.isPoliceTenant is bool &&
+        data.idType in ['fayda', 'police_digital'] &&
+        isNonEmptyStringMax(data.idNumber, 60) &&
+        isNonEmptyStringMax(data.idFrontImage, 350000) &&
+        isNonEmptyStringMax(data.idBackImage, 350000) &&
+        (!('portraitImage' in data) || isStringMax(data.portraitImage, 350000)) &&
+        isNonEmptyStringMax(data.moveInDate, 30) &&
+        data.status in ['active', 'moved_out'] &&
+        (!('replacedTenantId' in data) || isStringMax(data.replacedTenantId, 128)) &&
+        (!('replacedTenantName' in data) || isStringMax(data.replacedTenantName, 150)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWantedPerson(data) {
+      return data.keys().hasAll([
+          'wantedId', 'fullName', 'phone', 'faydaId', 'reason',
+          'caseNumber', 'priority', 'status', 'reportedByName',
+          'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'wantedId', 'fullName', 'phone', 'faydaId', 'photoImage', 'reason',
+          'caseNumber', 'priority', 'status', 'reportedByOfficerId',
+          'reportedByName', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.wantedId) &&
+        isStringMax(data.fullName, 150) &&
+        isStringMax(data.phone, 30) &&
+        isStringMax(data.faydaId, 60) &&
+        (!('photoImage' in data) || isStringMax(data.photoImage, 350000)) &&
+        (data.fullName.size() > 0 || data.phone.size() > 0 || data.faydaId.size() > 0 || ('photoImage' in data && data.photoImage.size() > 0)) &&
+        isNonEmptyStringMax(data.reason, 1000) &&
+        isNonEmptyStringMax(data.caseNumber, 80) &&
+        data.priority in ['critical', 'high', 'medium'] &&
+        data.status in ['active', 'captured', 'closed'] &&
+        (!('reportedByOfficerId' in data) || isStringMax(data.reportedByOfficerId, 128)) &&
+        isNonEmptyStringMax(data.reportedByName, 150) &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWantedAlert(data) {
+      return data.keys().hasAll([
+          'alertId', 'wantedId', 'wantedName', 'tenantId', 'tenantName',
+          'landlordId', 'landlordName', 'landlordPhone', 'city', 'woreda',
+          'kebele', 'matchType', 'status', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'alertId', 'wantedId', 'wantedName', 'tenantId', 'tenantName',
+          'tenantPhone', 'landlordId', 'landlordName', 'landlordPhone', 'city',
+          'woreda', 'kebele', 'houseNumber', 'matchType', 'status',
+          'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.alertId) &&
+        isValidId(data.wantedId) &&
+        isStringMax(data.wantedName, 150) &&
+        isValidId(data.tenantId) &&
+        isNonEmptyStringMax(data.tenantName, 150) &&
+        (!('tenantPhone' in data) || isStringMax(data.tenantPhone, 30)) &&
+        isValidId(data.landlordId) &&
+        isNonEmptyStringMax(data.landlordName, 150) &&
+        isNonEmptyStringMax(data.landlordPhone, 30) &&
+        isNonEmptyStringMax(data.city, 100) &&
+        isNonEmptyStringMax(data.woreda, 100) &&
+        isNonEmptyStringMax(data.kebele, 100) &&
+        (!('houseNumber' in data) || isStringMax(data.houseNumber, 60)) &&
+        isNonEmptyStringMax(data.matchType, 100) &&
+        data.status in ['unread', 'acknowledged', 'resolved'] &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCriminalRecord(data) {
+      return data.keys().hasAll([
+          'recordId', 'personName', 'recordType', 'offenseTitle', 'description',
+          'city', 'woreda', 'kebele', 'stationName', 'incidentDate',
+          'recordedByName', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'recordId', 'personName', 'phone', 'faydaId', 'photoImage',
+          'recordType', 'offenseTitle', 'description', 'city', 'woreda',
+          'kebele', 'stationName', 'incidentDate', 'recordedByOfficerId',
+          'recordedByName', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.recordId) &&
+        isNonEmptyStringMax(data.personName, 150) &&
+        (!('phone' in data) || isStringMax(data.phone, 30)) &&
+        (!('faydaId' in data) || isStringMax(data.faydaId, 60)) &&
+        (!('photoImage' in data) || isStringMax(data.photoImage, 350000)) &&
+        data.recordType in ['arrested', 'suspect', 'convicted', 'released'] &&
+        isNonEmptyStringMax(data.offenseTitle, 200) &&
+        isNonEmptyStringMax(data.description, 2000) &&
+        isNonEmptyStringMax(data.city, 100) &&
+        isNonEmptyStringMax(data.woreda, 100) &&
+        isNonEmptyStringMax(data.kebele, 100) &&
+        isNonEmptyStringMax(data.stationName, 150) &&
+        isNonEmptyStringMax(data.incidentDate, 30) &&
+        (!('recordedByOfficerId' in data) || isStringMax(data.recordedByOfficerId, 128)) &&
+        isNonEmptyStringMax(data.recordedByName, 150) &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidActivityHistory(data) {
+      return data.keys().hasAll([
+          'historyId', 'actorUid', 'actorRole', 'actorName', 'actionType',
+          'subjectType', 'subjectId', 'subjectName', 'city', 'woreda',
+          'kebele', 'details', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'historyId', 'actorUid', 'actorRole', 'actorName', 'actionType',
+          'subjectType', 'subjectId', 'subjectName', 'subjectPhone',
+          'subjectIdNumber', 'city', 'woreda', 'kebele', 'details', 'createdAt'
+        ]) &&
+        isValidId(data.historyId) &&
+        isValidId(data.actorUid) &&
+        data.actorRole in ['admin', 'police', 'landlord'] &&
+        isNonEmptyStringMax(data.actorName, 150) &&
+        data.actionType in [
+          'landlord_registered', 'landlord_address_changed', 'landlord_replaced',
+          'tenant_registered', 'tenant_moved_out', 'password_reset',
+          'wanted_registered', 'criminal_record_added', 'officer_created',
+          'officer_updated', 'user_deleted', 'record_deleted',
+          'logo_updated', 'admin_credentials_updated'
+        ] &&
+        data.subjectType in ['landlord', 'tenant', 'officer', 'wanted', 'criminal_record', 'system'] &&
+        isValidId(data.subjectId) &&
+        isNonEmptyStringMax(data.subjectName, 150) &&
+        (!('subjectPhone' in data) || isStringMax(data.subjectPhone, 30)) &&
+        (!('subjectIdNumber' in data) || isStringMax(data.subjectIdNumber, 60)) &&
+        isStringMax(data.city, 100) &&
+        isStringMax(data.woreda, 100) &&
+        isStringMax(data.kebele, 100) &&
+        isNonEmptyStringMax(data.details, 1000) &&
+        data.createdAt is timestamp;
+    }
+
+    // 4. Collection Rules
+
+    match /test/{docId} {
+      allow get: if isValidId(docId) && isSignedIn();
+    }
+
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && isVerifiedEmail() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(uid) && isAdmin() && isValidAdminUser(incoming()) &&
+        incoming().uid == uid && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /admin_credentials/{credId} {
+      allow get: if isValidId(credId) && isAdmin();
+      allow list: if false;
+      allow create: if isValidId(credId) && isAdmin() && isValidAdminCredential(incoming()) &&
+        incoming().credId == credId &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(credId) && isAdmin() && isValidAdminCredential(incoming()) &&
+        incoming().credId == existing().credId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'username', 'passwordHash', 'passwordSalt',
+          'isDefaultPassword', 'updatedByUid', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /system_settings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if false;
+      allow create: if isValidId(settingId) && isAdmin() && isValidBrandingSetting(incoming()) &&
+        incoming().updatedByUid == request.auth.uid && incoming().updatedAt == request.time;
+      allow update: if isValidId(settingId) && isAdmin() && isValidBrandingSetting(incoming()) &&
+        incoming().updatedByUid == request.auth.uid && incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['commissionName', 'subtitle', 'logoDataUrl', 'updatedByUid', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /jurisdictions/{jurisdictionId} {
+      allow get: if isValidId(jurisdictionId);
+      allow list: if true;
+      allow create: if isValidId(jurisdictionId) && isAdmin() && isValidJurisdiction(incoming()) &&
+        incoming().id == jurisdictionId && incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(jurisdictionId) && isAdmin();
+    }
+
+    match /police_emails/{email} {
+      allow get: if isVerifiedEmail() && (request.auth.token.email == email || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidPoliceEmailBinding(incoming()) &&
+        incoming().email == email && incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidPoliceEmailBinding(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['active', 'officerId']);
+      allow delete: if isAdmin();
+    }
+
+    match /police_officers/{officerId} {
+      allow get: if isValidId(officerId) && isPolice();
+      allow list: if isPolice();
+      allow create: if isValidId(officerId) && isAdmin() && isValidPoliceOfficer(incoming()) &&
+        incoming().officerId == officerId && incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isValidId(officerId) && isAdmin() && isValidPoliceOfficer(incoming()) &&
+        incoming().officerId == existing().officerId &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'fullName', 'rank', 'badgeNumber', 'phone', 'username', 'officerEmail',
+          'passwordHash', 'passwordSalt', 'jurisdictionLevel', 'city',
+          'woreda', 'kebele', 'active', 'updatedAt'
+        ]);
+      allow delete: if isValidId(officerId) && isAdmin();
+    }
+
+    match /landlords/{landlordId} {
+      allow get: if isValidId(landlordId) && isVerifiedEmail() && (
+        existing().ownerUid == request.auth.uid || isPolice()
+      );
+      allow list: if isVerifiedEmail() && (
+        resource.data.ownerUid == request.auth.uid || isPolice()
+      );
+      allow create: if isValidId(landlordId) && isVerifiedEmail() && isValidLandlord(incoming()) &&
+        incoming().landlordId == landlordId &&
+        (incoming().ownerUid == request.auth.uid || isPolice()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(landlordId) && isVerifiedEmail() && isValidLandlord(incoming()) &&
+        incoming().landlordId == existing().landlordId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            isPolice() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'fullName', 'phone', 'faydaId', 'idFrontImage', 'idBackImage',
+              'city', 'woreda', 'kebele', 'houseNumber', 'roomCount',
+              'status', 'replacedByLandlordId', 'passwordHash', 'passwordSalt', 'updatedAt'
+            ])
+          ) ||
+          (
+            existing().ownerUid == request.auth.uid &&
+            incoming().ownerUid == existing().ownerUid &&
+            incoming().status == existing().status &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'city', 'woreda', 'kebele', 'houseNumber', 'roomCount', 'phone', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(landlordId) && isAdmin();
+    }
+
+    match /tenants/{tenantId} {
+      allow get: if isValidId(tenantId) && isVerifiedEmail() && (
+        existing().landlordUid == request.auth.uid || isPolice()
+      );
+      allow list: if isVerifiedEmail() && (
+        resource.data.landlordUid == request.auth.uid || isPolice()
+      );
+      allow create: if isValidId(tenantId) && isVerifiedEmail() && isValidTenant(incoming()) &&
+        incoming().tenantId == tenantId &&
+        exists(/databases/$(database)/documents/landlords/$(incoming().landlordId)) &&
+        (
+          (
+            incoming().landlordUid == request.auth.uid &&
+            get(/databases/$(database)/documents/landlords/$(incoming().landlordId)).data.ownerUid == request.auth.uid
+          ) ||
+          isPolice()
+        ) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(tenantId) && isVerifiedEmail() && isValidTenant(incoming()) &&
+        incoming().tenantId == existing().tenantId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            isPolice() &&
+            exists(/databases/$(database)/documents/landlords/$(incoming().landlordId)) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel',
+              'landlordId', 'landlordName', 'landlordPhone', 'updatedAt'
+            ])
+          ) ||
+          (
+            existing().landlordUid == request.auth.uid &&
+            existing().status == 'active' &&
+            incoming().landlordId == existing().landlordId &&
+            incoming().landlordUid == existing().landlordUid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'roomLabel', 'updatedAt'])
+          )
+        );
+      allow delete: if false;
+    }
+
+    match /wanted_persons/{wantedId} {
+      allow get: if isValidId(wantedId) && isPolice();
+      allow list: if isPolice();
+      allow create: if isValidId(wantedId) && isPolice() && isValidWantedPerson(incoming()) &&
+        incoming().wantedId == wantedId &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(wantedId) && isPolice() && isValidWantedPerson(incoming()) &&
+        incoming().wantedId == existing().wantedId &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'fullName', 'phone', 'faydaId', 'photoImage', 'reason',
+          'caseNumber', 'priority', 'status', 'updatedAt'
+        ]);
+      allow delete: if isValidId(wantedId) && isAdmin();
+    }
+
+    match /wanted_alerts/{alertId} {
+      allow get: if isValidId(alertId) && isPolice();
+      allow list: if isPolice();
+      allow create: if isValidId(alertId) && isPolice() && isValidWantedAlert(incoming()) &&
+        incoming().alertId == alertId &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(alertId) && isPolice() && isValidWantedAlert(incoming()) &&
+        incoming().alertId == existing().alertId &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /criminal_records/{recordId} {
+      allow get: if isValidId(recordId) && isPolice();
+      allow list: if isPolice();
+      allow create: if isValidId(recordId) && isPolice() && isValidCriminalRecord(incoming()) &&
+        incoming().recordId == recordId &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(recordId) && isPolice() && isValidCriminalRecord(incoming()) &&
+        incoming().recordId == existing().recordId &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'recordType', 'offenseTitle', 'description', 'updatedAt'
+        ]);
+      allow delete: if isValidId(recordId) && isAdmin();
+    }
+
+    match /activity_history/{historyId} {
+      allow get: if isValidId(historyId) && isVerifiedEmail() && (
+        existing().actorUid == request.auth.uid || isPolice()
+      );
+      allow list: if isVerifiedEmail() && (
+        resource.data.actorUid == request.auth.uid || isPolice()
+      );
+      allow create: if isValidId(historyId) && isVerifiedEmail() && isValidActivityHistory(incoming()) &&
+        incoming().historyId == historyId &&
+        incoming().actorUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        (
+          incoming().actorRole == 'landlord' ||
+          (incoming().actorRole == 'police' && isPolice()) ||
+          (incoming().actorRole == 'admin' && isAdmin())
+        );
+      allow update, delete: if false;
+    }
+  }
+}

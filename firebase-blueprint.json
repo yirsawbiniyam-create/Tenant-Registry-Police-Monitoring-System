@@ -1,0 +1,451 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Regional Police Commission Super Administrator account.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 160 },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "fullName", "createdAt"]
+    },
+    "AdminCredential": {
+      "title": "AdminCredential",
+      "description": "Salted PBKDF2 credentials for Super Admin login, editable from the Admin dashboard.",
+      "type": "object",
+      "properties": {
+        "credId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "maxLength": 60, "pattern": "^[a-zA-Z0-9_.\\-]+$" },
+        "passwordHash": { "type": "string", "maxLength": 128 },
+        "passwordSalt": { "type": "string", "maxLength": 64 },
+        "isDefaultPassword": { "type": "boolean" },
+        "updatedByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "credId",
+        "username",
+        "passwordHash",
+        "passwordSalt",
+        "isDefaultPassword",
+        "updatedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BrandingSetting": {
+      "title": "BrandingSetting",
+      "description": "Publicly readable Commission branding configuration (Police logo and title) editable only by Admin.",
+      "type": "object",
+      "properties": {
+        "commissionName": { "type": "string", "maxLength": 200 },
+        "subtitle": { "type": "string", "maxLength": 200 },
+        "logoDataUrl": { "type": "string", "maxLength": 450000 },
+        "updatedByUid": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["commissionName", "logoDataUrl", "updatedByUid", "updatedAt"]
+    },
+    "Jurisdiction": {
+      "title": "Jurisdiction",
+      "description": "Administrative hierarchy unit (City, Woreda, Kebele) in Benishangul-Gumuz Region.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "city": { "type": "string", "maxLength": 100 },
+        "woreda": { "type": "string", "maxLength": 100 },
+        "kebele": { "type": "string", "maxLength": 100 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "city", "woreda", "kebele", "createdByUid", "createdAt"]
+    },
+    "PoliceEmailBinding": {
+      "title": "PoliceEmailBinding",
+      "description": "Trusted mapping of verified officer Google emails to police officer accounts.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 160 },
+        "officerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "active": { "type": "boolean" },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "officerId", "active", "createdByUid", "createdAt"]
+    },
+    "PoliceOfficer": {
+      "title": "PoliceOfficer",
+      "description": "Police officer account created by Admin with jurisdiction scope and credentials.",
+      "type": "object",
+      "properties": {
+        "officerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "rank": { "type": "string", "maxLength": 80 },
+        "badgeNumber": { "type": "string", "maxLength": 60 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "username": { "type": "string", "maxLength": 60 },
+        "officerEmail": { "type": "string", "maxLength": 160 },
+        "passwordHash": { "type": "string", "maxLength": 128 },
+        "passwordSalt": { "type": "string", "maxLength": 64 },
+        "jurisdictionLevel": { "type": "string", "enum": ["regional", "city", "woreda", "kebele"] },
+        "city": { "type": "string", "maxLength": 100 },
+        "woreda": { "type": "string", "maxLength": 100 },
+        "kebele": { "type": "string", "maxLength": 100 },
+        "active": { "type": "boolean" },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "officerId",
+        "fullName",
+        "rank",
+        "badgeNumber",
+        "phone",
+        "username",
+        "passwordHash",
+        "passwordSalt",
+        "jurisdictionLevel",
+        "city",
+        "woreda",
+        "kebele",
+        "active",
+        "createdByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Landlord": {
+      "title": "Landlord",
+      "description": "Registered property owner / landlord with Fayda ID and jurisdiction address.",
+      "type": "object",
+      "properties": {
+        "landlordId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "city": { "type": "string", "maxLength": 100 },
+        "woreda": { "type": "string", "maxLength": 100 },
+        "kebele": { "type": "string", "maxLength": 100 },
+        "houseNumber": { "type": "string", "maxLength": 60 },
+        "roomCount": { "type": "integer" },
+        "faydaId": { "type": "string", "maxLength": 60 },
+        "idFrontImage": { "type": "string", "maxLength": 350000 },
+        "idBackImage": { "type": "string", "maxLength": 350000 },
+        "passwordHash": { "type": "string", "maxLength": 128 },
+        "passwordSalt": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["active", "replaced", "suspended"] },
+        "replacedByLandlordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "landlordId",
+        "ownerUid",
+        "fullName",
+        "phone",
+        "city",
+        "woreda",
+        "kebele",
+        "houseNumber",
+        "roomCount",
+        "faydaId",
+        "idFrontImage",
+        "idBackImage",
+        "passwordHash",
+        "passwordSalt",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Tenant": {
+      "title": "Tenant",
+      "description": "Tenant registered by a landlord and routed to jurisdictional Police.",
+      "type": "object",
+      "properties": {
+        "tenantId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "landlordId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "landlordUid": { "type": "string", "maxLength": 128 },
+        "landlordName": { "type": "string", "maxLength": 150 },
+        "landlordPhone": { "type": "string", "maxLength": 30 },
+        "city": { "type": "string", "maxLength": 100 },
+        "woreda": { "type": "string", "maxLength": 100 },
+        "kebele": { "type": "string", "maxLength": 100 },
+        "houseNumber": { "type": "string", "maxLength": 60 },
+        "roomLabel": { "type": "string", "maxLength": 60 },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "maritalStatus": { "type": "string", "enum": ["married", "single"] },
+        "livingArrangement": { "type": "string", "enum": ["alone", "with_others"] },
+        "coResidents": { "type": "array", "description": "List of co-resident names (max 20)." },
+        "occupation": { "type": "string", "maxLength": 120 },
+        "isPoliceTenant": { "type": "boolean" },
+        "idType": { "type": "string", "enum": ["fayda", "police_digital"] },
+        "idNumber": { "type": "string", "maxLength": 60 },
+        "idFrontImage": { "type": "string", "maxLength": 350000 },
+        "idBackImage": { "type": "string", "maxLength": 350000 },
+        "portraitImage": { "type": "string", "maxLength": 350000 },
+        "moveInDate": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["active", "moved_out"] },
+        "replacedTenantId": { "type": "string", "maxLength": 128 },
+        "replacedTenantName": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "tenantId",
+        "landlordId",
+        "landlordUid",
+        "landlordName",
+        "landlordPhone",
+        "city",
+        "woreda",
+        "kebele",
+        "houseNumber",
+        "roomLabel",
+        "fullName",
+        "phone",
+        "maritalStatus",
+        "livingArrangement",
+        "coResidents",
+        "occupation",
+        "isPoliceTenant",
+        "idType",
+        "idNumber",
+        "idFrontImage",
+        "idBackImage",
+        "moveInDate",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WantedPerson": {
+      "title": "WantedPerson",
+      "description": "Confidential Police-only wanted person watch-list entry.",
+      "type": "object",
+      "properties": {
+        "wantedId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "faydaId": { "type": "string", "maxLength": 60 },
+        "photoImage": { "type": "string", "maxLength": 350000 },
+        "reason": { "type": "string", "maxLength": 1000 },
+        "caseNumber": { "type": "string", "maxLength": 80 },
+        "priority": { "type": "string", "enum": ["critical", "high", "medium"] },
+        "status": { "type": "string", "enum": ["active", "captured", "closed"] },
+        "reportedByName": { "type": "string", "maxLength": 150 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "wantedId",
+        "fullName",
+        "phone",
+        "faydaId",
+        "reason",
+        "caseNumber",
+        "priority",
+        "status",
+        "reportedByName",
+        "createdByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WantedAlert": {
+      "title": "WantedAlert",
+      "description": "Confidential Police-only alert triggered when a tenant matches a wanted person.",
+      "type": "object",
+      "properties": {
+        "alertId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "wantedId": { "type": "string", "maxLength": 128 },
+        "wantedName": { "type": "string", "maxLength": 150 },
+        "tenantId": { "type": "string", "maxLength": 128 },
+        "tenantName": { "type": "string", "maxLength": 150 },
+        "tenantPhone": { "type": "string", "maxLength": 30 },
+        "landlordId": { "type": "string", "maxLength": 128 },
+        "landlordName": { "type": "string", "maxLength": 150 },
+        "landlordPhone": { "type": "string", "maxLength": 30 },
+        "city": { "type": "string", "maxLength": 100 },
+        "woreda": { "type": "string", "maxLength": 100 },
+        "kebele": { "type": "string", "maxLength": 100 },
+        "houseNumber": { "type": "string", "maxLength": 60 },
+        "matchType": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["unread", "acknowledged", "resolved"] },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "alertId",
+        "wantedId",
+        "wantedName",
+        "tenantId",
+        "tenantName",
+        "landlordId",
+        "landlordName",
+        "landlordPhone",
+        "city",
+        "woreda",
+        "kebele",
+        "matchType",
+        "status",
+        "createdByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CriminalRecord": {
+      "title": "CriminalRecord",
+      "description": "Police-recorded arrest, suspect, or criminal history record.",
+      "type": "object",
+      "properties": {
+        "recordId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "personName": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "faydaId": { "type": "string", "maxLength": 60 },
+        "photoImage": { "type": "string", "maxLength": 350000 },
+        "recordType": { "type": "string", "enum": ["arrested", "suspect", "convicted", "released"] },
+        "offenseTitle": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "city": { "type": "string", "maxLength": 100 },
+        "woreda": { "type": "string", "maxLength": 100 },
+        "kebele": { "type": "string", "maxLength": 100 },
+        "stationName": { "type": "string", "maxLength": 150 },
+        "incidentDate": { "type": "string", "maxLength": 30 },
+        "recordedByName": { "type": "string", "maxLength": 150 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "recordId",
+        "personName",
+        "recordType",
+        "offenseTitle",
+        "description",
+        "city",
+        "woreda",
+        "kebele",
+        "stationName",
+        "incidentDate",
+        "recordedByName",
+        "createdByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ActivityHistory": {
+      "title": "ActivityHistory",
+      "description": "Immutable chronological audit log of every registration, address change, replacement, and enforcement action.",
+      "type": "object",
+      "properties": {
+        "historyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorRole": { "type": "string", "enum": ["admin", "police", "landlord"] },
+        "actorName": { "type": "string", "maxLength": 150 },
+        "actionType": {
+          "type": "string",
+          "enum": [
+            "landlord_registered",
+            "landlord_address_changed",
+            "landlord_replaced",
+            "tenant_registered",
+            "tenant_moved_out",
+            "password_reset",
+            "wanted_registered",
+            "criminal_record_added",
+            "officer_created",
+            "officer_updated",
+            "user_deleted",
+            "record_deleted",
+            "logo_updated",
+            "admin_credentials_updated"
+          ]
+        },
+        "subjectType": { "type": "string", "enum": ["landlord", "tenant", "officer", "wanted", "criminal_record", "system"] },
+        "subjectId": { "type": "string", "maxLength": 128 },
+        "subjectName": { "type": "string", "maxLength": 150 },
+        "subjectPhone": { "type": "string", "maxLength": 30 },
+        "subjectIdNumber": { "type": "string", "maxLength": 60 },
+        "city": { "type": "string", "maxLength": 100 },
+        "woreda": { "type": "string", "maxLength": 100 },
+        "kebele": { "type": "string", "maxLength": 100 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "historyId",
+        "actorUid",
+        "actorRole",
+        "actorName",
+        "actionType",
+        "subjectType",
+        "subjectId",
+        "subjectName",
+        "city",
+        "woreda",
+        "kebele",
+        "details",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Authorized Super Admin accounts."
+    },
+    "/admin_credentials/{credId}": {
+      "schema": { "$ref": "#/entities/AdminCredential" },
+      "description": "Admin username and salted password hash managed strictly by Super Admin."
+    },
+    "/system_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/BrandingSetting" },
+      "description": "System branding settings (logoDataUrl and commissionName)."
+    },
+    "/jurisdictions/{jurisdictionId}": {
+      "schema": { "$ref": "#/entities/Jurisdiction" },
+      "description": "Regional administrative units (City, Woreda, Kebele)."
+    },
+    "/police_emails/{email}": {
+      "schema": { "$ref": "#/entities/PoliceEmailBinding" },
+      "description": "Admin-managed verified email bindings for Police Officers."
+    },
+    "/police_officers/{officerId}": {
+      "schema": { "$ref": "#/entities/PoliceOfficer" },
+      "description": "Police officer directory with jurisdictional scopes."
+    },
+    "/landlords/{landlordId}": {
+      "schema": { "$ref": "#/entities/Landlord" },
+      "description": "Registered landlords and property ownership metadata."
+    },
+    "/tenants/{tenantId}": {
+      "schema": { "$ref": "#/entities/Tenant" },
+      "description": "Tenant registrations submitted by landlords."
+    },
+    "/wanted_persons/{wantedId}": {
+      "schema": { "$ref": "#/entities/WantedPerson" },
+      "description": "Confidential Police-only wanted persons list."
+    },
+    "/wanted_alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/WantedAlert" },
+      "description": "Confidential Police-only wanted match alerts."
+    },
+    "/criminal_records/{recordId}": {
+      "schema": { "$ref": "#/entities/CriminalRecord" },
+      "description": "Confidential Police-only arrest and criminal history records."
+    },
+    "/activity_history/{historyId}": {
+      "schema": { "$ref": "#/entities/ActivityHistory" },
+      "description": "Immutable chronological audit log of all system events."
+    }
+  }
+}

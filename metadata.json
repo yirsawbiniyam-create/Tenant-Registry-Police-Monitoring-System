@@ -1,0 +1,6 @@
+{
+  "name": "ቤኒሻንጉል ጉሙዝ ፖሊስ — የአከራይ ተከራይ ክትትል ሲስተም",
+  "description": "የቤኒሻንጉል ጉሙዝ ክልል ፖሊስ ኮሚሽን የአከራይ ተከራይ መመዝገቢያ፣ የወንጀል መከላከያ እና የፖሊስ ክትትል ሲስተም።",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Shield } from 'lucide-react';
+import { sanitizeImageSrc } from '../utils/crypto';
 
 interface BrandingImageProps {
   src?: string;
@@ -14,9 +15,14 @@ export const BrandingImage: React.FC<BrandingImageProps> = ({
   className = 'w-12 h-12 rounded-full object-cover',
   fallbackText,
 }) => {
+  const safeSrc = sanitizeImageSrc(src);
   const [failed, setFailed] = useState(false);
 
-  if (!src || failed) {
+  useEffect(() => {
+    setFailed(false);
+  }, [safeSrc]);
+
+  if (!safeSrc || failed) {
     return (
       <div
         className={`flex items-center justify-center bg-slate-900 text-amber-400 border border-slate-700 shrink-0 ${className}`}
@@ -30,7 +36,7 @@ export const BrandingImage: React.FC<BrandingImageProps> = ({
 
   return (
     <img
-      src={src}
+      src={safeSrc}
       alt={alt}
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}

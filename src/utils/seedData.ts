@@ -7,6 +7,22 @@ export interface StaticJurisdictionSeed {
 
 export const DEFAULT_LOGO_PATH = '/src/assets/images/bg_police_logo_1795171832571.jpg';
 export const ASSOSA_BANNER_PATH = '/src/assets/images/assosa_hero_banner_1795171833846.jpg';
+export const LOGIN_SEA_MOUNTAINS_BG_PATH = '/src/assets/images/login_sea_mountains_bg_1795271607106.jpg';
+export const DEFAULT_REGIONAL_FLAG_PATH = '/src/assets/images/bg_regional_flag.svg';
+export const DEFAULT_ETHIOPIAN_FLAG_PATH = '/src/assets/images/ethiopia_national_flag.svg';
+
+const LEGACY_REGIONAL_FLAG_JPG = '/src/assets/images/bg_regional_flag_1795271605750.jpg';
+const LEGACY_ETHIOPIAN_FLAG_JPG = '/src/assets/images/ethiopia_national_flag_1795271605690.jpg';
+
+export function resolveRegionalFlagSrc(src?: string): string {
+  if (!src || src === LEGACY_REGIONAL_FLAG_JPG) return DEFAULT_REGIONAL_FLAG_PATH;
+  return src;
+}
+
+export function resolveEthiopianFlagSrc(src?: string): string {
+  if (!src || src === LEGACY_ETHIOPIAN_FLAG_JPG) return DEFAULT_ETHIOPIAN_FLAG_PATH;
+  return src;
+}
 
 export const DEFAULT_COMMISSION_NAME = 'የቤኒሻንጉል ጉሙዝ ክልል ፖሊስ ኮሚሽን';
 export const DEFAULT_COMMISSION_SUBTITLE = 'የአከራይ ተከራይ መመዝገቢያና የወንጀል መከላከያ ክትትል ሲስተም';

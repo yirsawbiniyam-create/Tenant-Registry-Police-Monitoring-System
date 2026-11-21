@@ -34,14 +34,33 @@ import {
   hashPassword,
   normalizePhone,
   normalizeText,
+  sanitizeImageSrc,
   verifyPassword,
 } from '../utils/crypto';
 import {
   DEFAULT_COMMISSION_NAME,
   DEFAULT_COMMISSION_SUBTITLE,
+  DEFAULT_ETHIOPIAN_FLAG_PATH,
   DEFAULT_JURISDICTIONS,
   DEFAULT_LOGO_PATH,
+  DEFAULT_REGIONAL_FLAG_PATH,
+  resolveEthiopianFlagSrc,
+  resolveRegionalFlagSrc,
 } from '../utils/seedData';
+
+function assertSafeImageDataUrl(val: string | undefined, maxLen: number, required = false): string {
+  const safe = sanitizeImageSrc(val);
+  if (!safe) {
+    if (required) {
+      throw new Error('የምስል ፋይሉ የተፈቀደ ቅርፀት አይደለም (JPG/PNG/WEBP ብቻ)።');
+    }
+    return '';
+  }
+  if (safe.length > maxLen) {
+    throw new Error('የምስሉ መጠን ከተፈቀደው ገደብ በላይ ነው።');
+  }
+  return safe;
+}
 
 export function subscribeBranding(
   onData: (branding: BrandingSetting) => void
@@ -51,12 +70,19 @@ export function subscribeBranding(
     doc(db, 'system_settings', 'branding'),
     (snap) => {
       if (snap.exists()) {
-        onData(snap.data() as BrandingSetting);
+        const raw = snap.data() as BrandingSetting;
+        onData({
+          ...raw,
+          regionalFlagDataUrl: resolveRegionalFlagSrc(raw.regionalFlagDataUrl),
+          ethiopianFlagDataUrl: resolveEthiopianFlagSrc(raw.ethiopianFlagDataUrl),
+        });
       } else {
         onData({
           commissionName: DEFAULT_COMMISSION_NAME,
           subtitle: DEFAULT_COMMISSION_SUBTITLE,
           logoDataUrl: DEFAULT_LOGO_PATH,
+          regionalFlagDataUrl: DEFAULT_REGIONAL_FLAG_PATH,
+          ethiopianFlagDataUrl: DEFAULT_ETHIOPIAN_FLAG_PATH,
           updatedByUid: 'system',
           updatedAt: null,
         });
@@ -70,28 +96,43 @@ export function subscribeBranding(
 
 export async function saveBranding(
   uid: string,
-  payload: { commissionName: string; subtitle: string; logoDataUrl: string }
+  payload: {
+    commissionName: string;
+    subtitle: string;
+    logoDataUrl: string;
+    regionalFlagDataUrl?: string;
+    ethiopianFlagDataUrl?: string;
+  }
 ): Promise<void> {
   const path = 'system_settings/branding';
+  const safeLogo = assertSafeImageDataUrl(payload.logoDataUrl, 450000, true);
+  const safeRegionalFlag = assertSafeImageDataUrl(
+    payload.regionalFlagDataUrl || DEFAULT_REGIONAL_FLAG_PATH,
+    450000,
+    false
+  );
+  const safeEthiopianFlag = assertSafeImageDataUrl(
+    payload.ethiopianFlagDataUrl || DEFAULT_ETHIOPIAN_FLAG_PATH,
+    450000,
+    false
+  );
   try {
     const ref = doc(db, 'system_settings', 'branding');
+    const docPayload: Record<string, unknown> = {
+      commissionName: payload.commissionName.slice(0, 200),
+      subtitle: payload.subtitle.slice(0, 200),
+      logoDataUrl: safeLogo,
+      updatedByUid: uid,
+      updatedAt: serverTimestamp(),
+    };
+    if (safeRegionalFlag) docPayload.regionalFlagDataUrl = safeRegionalFlag;
+    if (safeEthiopianFlag) docPayload.ethiopianFlagDataUrl = safeEthiopianFlag;
+
     const existingSnap = await getDoc(ref);
     if (existingSnap.exists()) {
-      await updateDoc(ref, {
-        commissionName: payload.commissionName.slice(0, 200),
-        subtitle: payload.subtitle.slice(0, 200),
-        logoDataUrl: payload.logoDataUrl.slice(0, 450000),
-        updatedByUid: uid,
-        updatedAt: serverTimestamp(),
-      });
+      await updateDoc(ref, docPayload);
     } else {
-      await setDoc(ref, {
-        commissionName: payload.commissionName.slice(0, 200),
-        subtitle: payload.subtitle.slice(0, 200),
-        logoDataUrl: payload.logoDataUrl.slice(0, 450000),
-        updatedByUid: uid,
-        updatedAt: serverTimestamp(),
-      });
+      await setDoc(ref, docPayload);
     }
     await logActivity({
       actorUid: uid,
@@ -104,7 +145,7 @@ export async function saveBranding(
       city: 'ቤኒሻንጉል ጉሙዝ',
       woreda: 'ክልል',
       kebele: 'ዋና ጽ/ቤት',
-      details: 'የፖሊስ ኮሚሽን ሎጎ እና መጠሪያ ተዘምኗል።',
+      details: 'የፖሊስ ኮሚሽን ሎጎ፣ የክልል እና የኢትዮጵያ ሰንደቅአላማ እና መጠሪያ ተዘምኗል።',
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
@@ -619,6 +660,8 @@ export async function registerLandlord(
   const salt = generateSalt();
   const passwordHash = await hashPassword(input.password, salt);
   const path = `landlords/${landlordId}`;
+  const safeFront = assertSafeImageDataUrl(input.idFrontImage, 350000, true);
+  const safeBack = assertSafeImageDataUrl(input.idBackImage, 350000, true);
   try {
     const payload = {
       landlordId,
@@ -631,8 +674,8 @@ export async function registerLandlord(
       houseNumber: input.houseNumber.trim().slice(0, 60),
       roomCount: Math.max(1, Math.min(500, Math.floor(input.roomCount))),
       faydaId: input.faydaId.trim().slice(0, 60),
-      idFrontImage: input.idFrontImage.slice(0, 350000),
-      idBackImage: input.idBackImage.slice(0, 350000),
+      idFrontImage: safeFront,
+      idBackImage: safeBack,
       passwordHash,
       passwordSalt: salt,
       status: 'active' as const,
@@ -719,13 +762,15 @@ export async function replaceLandlordOwner(
   associatedTenants: Tenant[]
 ): Promise<void> {
   const path = `landlords/${oldLandlord.landlordId}`;
+  const safeFront = assertSafeImageDataUrl(newOwner.idFrontImage, 350000, true);
+  const safeBack = assertSafeImageDataUrl(newOwner.idBackImage, 350000, true);
   try {
     await updateDoc(doc(db, 'landlords', oldLandlord.landlordId), {
       fullName: newOwner.fullName.trim().slice(0, 150),
       phone: normalizePhone(newOwner.phone).slice(0, 30),
       faydaId: newOwner.faydaId.trim().slice(0, 60),
-      idFrontImage: newOwner.idFrontImage.slice(0, 350000),
-      idBackImage: newOwner.idBackImage.slice(0, 350000),
+      idFrontImage: safeFront,
+      idBackImage: safeBack,
       updatedAt: serverTimestamp(),
     });
 
@@ -783,6 +828,11 @@ export async function registerTenant(
   const tenantId = createValidId('ten');
   const path = `tenants/${tenantId}`;
   const isPoliceTenant = input.occupation.trim() === 'ፖሊስ' || input.idType === 'police_digital';
+  const safeFront = assertSafeImageDataUrl(input.idFrontImage, 350000, true);
+  const safeBack = assertSafeImageDataUrl(input.idBackImage, 350000, true);
+  const safePortrait = input.portraitImage
+    ? assertSafeImageDataUrl(input.portraitImage, 350000, true)
+    : '';
   try {
     const payload: Record<string, unknown> = {
       tenantId,
@@ -807,15 +857,15 @@ export async function registerTenant(
       isPoliceTenant,
       idType: isPoliceTenant ? 'police_digital' : 'fayda',
       idNumber: input.idNumber.trim().slice(0, 60),
-      idFrontImage: input.idFrontImage.slice(0, 350000),
-      idBackImage: input.idBackImage.slice(0, 350000),
+      idFrontImage: safeFront,
+      idBackImage: safeBack,
       moveInDate: input.moveInDate.slice(0, 30),
       status: 'active',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
-    if (input.portraitImage) {
-      payload.portraitImage = input.portraitImage.slice(0, 350000);
+    if (safePortrait) {
+      payload.portraitImage = safePortrait;
     }
     if (input.replacedTenant) {
       payload.replacedTenantId = input.replacedTenant.tenantId;
@@ -907,6 +957,9 @@ export async function createWantedPerson(
 ): Promise<WantedPerson> {
   const wantedId = createValidId('want');
   const path = `wanted_persons/${wantedId}`;
+  const safePhoto = input.photoImage
+    ? assertSafeImageDataUrl(input.photoImage, 350000, true)
+    : '';
   try {
     const payload: Record<string, unknown> = {
       wantedId,
@@ -922,7 +975,7 @@ export async function createWantedPerson(
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
-    if (input.photoImage) payload.photoImage = input.photoImage.slice(0, 350000);
+    if (safePhoto) payload.photoImage = safePhoto;
     if (officerId) payload.reportedByOfficerId = officerId;
 
     await setDoc(doc(db, 'wanted_persons', wantedId), payload);
@@ -1066,6 +1119,9 @@ export async function createCriminalRecord(
 ): Promise<CriminalRecord> {
   const recordId = createValidId('crim');
   const path = `criminal_records/${recordId}`;
+  const safePhoto = input.photoImage
+    ? assertSafeImageDataUrl(input.photoImage, 350000, true)
+    : '';
   try {
     const payload: Record<string, unknown> = {
       recordId,
@@ -1085,7 +1141,7 @@ export async function createCriminalRecord(
     };
     if (input.phone) payload.phone = normalizePhone(input.phone).slice(0, 30);
     if (input.faydaId) payload.faydaId = input.faydaId.trim().slice(0, 60);
-    if (input.photoImage) payload.photoImage = input.photoImage.slice(0, 350000);
+    if (safePhoto) payload.photoImage = safePhoto;
     if (officerId) payload.recordedByOfficerId = officerId;
 
     await setDoc(doc(db, 'criminal_records', recordId), payload);
@@ -1119,6 +1175,66 @@ export async function updateCriminalRecordType(
     await updateDoc(doc(db, 'criminal_records', recordId), {
       recordType,
       updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+export async function updateCriminalRecord(
+  actorUid: string,
+  actorName: string,
+  recordId: string,
+  updates: {
+    personName: string;
+    phone?: string;
+    faydaId?: string;
+    photoImage?: string;
+    recordType: 'arrested' | 'suspect' | 'convicted' | 'released';
+    offenseTitle: string;
+    description: string;
+    city: string;
+    woreda: string;
+    kebele: string;
+    stationName: string;
+    incidentDate: string;
+  }
+): Promise<void> {
+  const path = `criminal_records/${recordId}`;
+  const safePhoto = updates.photoImage
+    ? assertSafeImageDataUrl(updates.photoImage, 350000, false)
+    : '';
+  try {
+    const patch: Record<string, unknown> = {
+      personName: updates.personName.trim().slice(0, 150),
+      phone: updates.phone ? normalizePhone(updates.phone).slice(0, 30) : '',
+      faydaId: updates.faydaId ? updates.faydaId.trim().slice(0, 60) : '',
+      photoImage: safePhoto,
+      recordType: updates.recordType,
+      offenseTitle: updates.offenseTitle.trim().slice(0, 200),
+      description: updates.description.trim().slice(0, 2000),
+      city: updates.city.trim().slice(0, 100),
+      woreda: updates.woreda.trim().slice(0, 100),
+      kebele: updates.kebele.trim().slice(0, 100),
+      stationName: updates.stationName.trim().slice(0, 150),
+      incidentDate: updates.incidentDate.slice(0, 30),
+      updatedAt: serverTimestamp(),
+    };
+    await updateDoc(doc(db, 'criminal_records', recordId), patch);
+    await logActivity({
+      actorUid,
+      actorRole: 'police',
+      actorName,
+      actionType: 'criminal_record_updated',
+      subjectType: 'criminal_record',
+      subjectId: recordId,
+      subjectName: updates.personName,
+      subjectPhone: updates.phone ? normalizePhone(updates.phone) : undefined,
+      subjectIdNumber: updates.faydaId,
+      city: updates.city,
+      woreda: updates.woreda,
+      kebele: updates.kebele,
+      details: `የወንጀል/ተጠርጣሪ ሪከርድ (${updates.personName} - ${updates.recordType}: ${updates.offenseTitle}) ተስተካክሏል።`,
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);

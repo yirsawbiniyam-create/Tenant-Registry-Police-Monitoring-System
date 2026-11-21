@@ -6,8 +6,10 @@ import type { ActivePortalSession, BrandingSetting, Jurisdiction } from './types
 import {
   DEFAULT_COMMISSION_NAME,
   DEFAULT_COMMISSION_SUBTITLE,
+  DEFAULT_ETHIOPIAN_FLAG_PATH,
   DEFAULT_JURISDICTIONS,
   DEFAULT_LOGO_PATH,
+  DEFAULT_REGIONAL_FLAG_PATH,
 } from './utils/seedData';
 import {
   ensureAdminCredentialsSeeded,
@@ -31,6 +33,8 @@ function AppContent() {
     commissionName: DEFAULT_COMMISSION_NAME,
     subtitle: DEFAULT_COMMISSION_SUBTITLE,
     logoDataUrl: DEFAULT_LOGO_PATH,
+    regionalFlagDataUrl: DEFAULT_REGIONAL_FLAG_PATH,
+    ethiopianFlagDataUrl: DEFAULT_ETHIOPIAN_FLAG_PATH,
     updatedByUid: 'system',
     updatedAt: null,
   });

@@ -44,6 +44,7 @@ import {
   formatDateAm,
   normalizePhone,
   normalizeText,
+  sanitizeImageSrc,
   toJsDate,
 } from '../utils/crypto';
 import {
@@ -64,11 +65,18 @@ import {
   subscribePoliceData,
   updateAdminCredentials,
   updateAlertStatus,
+  updateCriminalRecord,
   updateCriminalRecordType,
   updateLandlordCredentials,
   updateOfficerCredentials,
   updateWantedStatus,
 } from '../services/firestoreService';
+import {
+  DEFAULT_ETHIOPIAN_FLAG_PATH,
+  DEFAULT_REGIONAL_FLAG_PATH,
+  resolveEthiopianFlagSrc,
+  resolveRegionalFlagSrc,
+} from '../utils/seedData';
 import { BrandingImage } from './BrandingImage';
 import {
   computeRepeatOffendersCount,
@@ -210,6 +218,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     officer ? `${officer.city} ${officer.woreda} ፖሊስ ጣቢያ` : 'አሶሳ ከተማ ፖሊስ መምሪያ'
   );
   const [crDate, setCrDate] = useState(new Date().toISOString().slice(0, 10));
+  const [editingCriminalRecordId, setEditingCriminalRecordId] = useState<string | null>(null);
   const [crSearchQuery, setCrSearchQuery] = useState('');
   const [crFilterType, setCrFilterType] = useState<'all' | RecordType>('all');
   const [crPhotoQueryImg, setCrPhotoQueryImg] = useState('');
@@ -251,10 +260,24 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   const [editOffPass, setEditOffPass] = useState('');
   const [editOffActive, setEditOffActive] = useState(true);
 
-  // Admin: Logo / Branding Form
+  // Admin: Logo / Flags / Branding Form
   const [brandName, setBrandName] = useState(branding.commissionName);
   const [brandSub, setBrandSub] = useState(branding.subtitle || '');
   const [brandLogo, setBrandLogo] = useState(branding.logoDataUrl);
+  const [brandRegionalFlag, setBrandRegionalFlag] = useState(
+    resolveRegionalFlagSrc(branding.regionalFlagDataUrl || DEFAULT_REGIONAL_FLAG_PATH)
+  );
+  const [brandEthiopianFlag, setBrandEthiopianFlag] = useState(
+    resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl || DEFAULT_ETHIOPIAN_FLAG_PATH)
+  );
+
+  useEffect(() => {
+    setBrandName(branding.commissionName);
+    setBrandSub(branding.subtitle || '');
+    setBrandLogo(branding.logoDataUrl);
+    setBrandRegionalFlag(resolveRegionalFlagSrc(branding.regionalFlagDataUrl));
+    setBrandEthiopianFlag(resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl));
+  }, [branding]);
 
   // Admin: New Jurisdiction
   const [jurCity, setJurCity] = useState('');
@@ -360,6 +383,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       return (
         normalizeText(c.personName).includes(q) ||
         normalizeText(c.faydaId || '').includes(q) ||
+        normalizeText(c.recordId).includes(q) ||
         normalizeText(c.offenseTitle).includes(q) ||
         (qPhone.length >= 3 && normalizePhone(c.phone || '').includes(qPhone))
       );
@@ -561,13 +585,20 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
 
   async function handleImageUpload(
     e: React.ChangeEvent<HTMLInputElement>,
-    setter: (val: string) => void
+    setter: (val: string) => void,
+    preserveTransparency = false
   ) {
     const file = e.target.files?.[0];
     if (!file) return;
     setErrorMsg('');
     try {
-      const compressed = await compressImageFile(file, 720, 0.68, 250000);
+      const compressed = await compressImageFile(
+        file,
+        720,
+        preserveTransparency ? 0.8 : 0.68,
+        250000,
+        preserveTransparency
+      );
       setter(compressed);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'ምስሉን ማስገባት አልተቻለም');
@@ -880,33 +911,86 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     }
   }
 
+  function resetCriminalRecordForm() {
+    setEditingCriminalRecordId(null);
+    setCrName('');
+    setCrPhone('');
+    setCrFayda('');
+    setCrPhoto('');
+    setCrType('arrested');
+    setCrOffense('');
+    setCrDesc('');
+    setCrCity(officer?.city || 'አሶሳ ከተማ');
+    setCrWoreda(officer?.woreda || 'ወረዳ 1');
+    setCrKebele(officer?.kebele || 'ቀበሌ 01');
+    setCrStation(
+      officer ? `${officer.city} ${officer.woreda} ፖሊስ ጣቢያ` : 'አሶሳ ከተማ ፖሊስ መምሪያ'
+    );
+    setCrDate(new Date().toISOString().slice(0, 10));
+  }
+
+  function startEditCriminalRecord(rec: CriminalRecord) {
+    setEditingCriminalRecordId(rec.recordId);
+    setCrName(rec.personName);
+    setCrPhone(rec.phone || '');
+    setCrFayda(rec.faydaId || '');
+    setCrPhoto(rec.photoImage || '');
+    setCrType(rec.recordType);
+    setCrOffense(rec.offenseTitle);
+    setCrDesc(rec.description);
+    setCrCity(rec.city);
+    setCrWoreda(rec.woreda);
+    setCrKebele(rec.kebele);
+    setCrStation(rec.stationName);
+    setCrDate(rec.incidentDate);
+    setSection('criminal_records');
+  }
+
   async function handleSaveCriminalRecord(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg('');
     setStatusMsg('');
     setBusy(true);
     try {
-      await createCriminalRecord(firebaseUid, actorName, officer?.officerId, {
-        personName: crName,
-        phone: crPhone,
-        faydaId: crFayda,
-        photoImage: crPhoto || undefined,
-        recordType: crType,
-        offenseTitle: crOffense,
-        description: crDesc,
-        city: crCity,
-        woreda: crWoreda,
-        kebele: crKebele,
-        stationName: crStation,
-        incidentDate: crDate,
-      });
-      setCrName('');
-      setCrPhone('');
-      setCrFayda('');
-      setCrPhoto('');
-      setCrOffense('');
-      setCrDesc('');
-      setStatusMsg('የእስር እና የወንጀል ሪከርድ መዝገብ ተቀምጧል።');
+      if (editingCriminalRecordId) {
+        await updateCriminalRecord(firebaseUid, actorName, editingCriminalRecordId, {
+          personName: crName,
+          phone: crPhone,
+          faydaId: crFayda,
+          photoImage: crPhoto || undefined,
+          recordType: crType,
+          offenseTitle: crOffense,
+          description: crDesc,
+          city: crCity,
+          woreda: crWoreda,
+          kebele: crKebele,
+          stationName: crStation,
+          incidentDate: crDate,
+        });
+        resetCriminalRecordForm();
+        setStatusMsg(
+          lang === 'am'
+            ? 'የወንጀል / የተጠርጣሪ ሪከርድ በተሳካ ሁኔታ ተስተካክሏል።'
+            : 'Criminal / suspect record updated successfully.'
+        );
+      } else {
+        await createCriminalRecord(firebaseUid, actorName, officer?.officerId, {
+          personName: crName,
+          phone: crPhone,
+          faydaId: crFayda,
+          photoImage: crPhoto || undefined,
+          recordType: crType,
+          offenseTitle: crOffense,
+          description: crDesc,
+          city: crCity,
+          woreda: crWoreda,
+          kebele: crKebele,
+          stationName: crStation,
+          incidentDate: crDate,
+        });
+        resetCriminalRecordForm();
+        setStatusMsg('የእስር እና የወንጀል ሪከርድ መዝገብ ተቀምጧል።');
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'መመዝገብ አልተቻለም');
     } finally {
@@ -1135,8 +1219,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         commissionName: brandName,
         subtitle: brandSub,
         logoDataUrl: brandLogo,
+        regionalFlagDataUrl: brandRegionalFlag,
+        ethiopianFlagDataUrl: brandEthiopianFlag,
       });
-      setStatusMsg('የፖሊስ ኮሚሽን ሎጎ እና መጠሪያ በመላው ሲስተሙ (የመግቢያ ገፅን ጨምሮ) ተቀይሯል።');
+      setStatusMsg('የፖሊስ ኮሚሽን ሎጎ፣ የክልል እና የኢትዮጵያ ሰንደቅአላማ በመላው ሲስተሙ (የመግቢያ ገፅን ጨምሮ) ተቀይሯል።');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'ሎጎ መቀየር አልተቻለም');
     } finally {
@@ -1193,15 +1279,15 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Top 3-Zone Header */}
-      <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 no-print">
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
+      <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3 no-print">
+        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <BrandingImage
               src={branding.logoDataUrl}
               alt={branding.commissionName}
-              className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-slate-200 shrink-0"
             />
-            <span className="text-sm sm:text-base font-bold text-slate-900 whitespace-nowrap truncate">
+            <span className="text-xs sm:text-base font-bold text-slate-900 whitespace-nowrap truncate">
               {branding.commissionName}
             </span>
           </div>
@@ -1216,11 +1302,11 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={onToggleLang}
-              className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1 px-2.5 py-2 min-h-[40px] text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
             >
               <Globe className="w-3.5 h-3.5" />
               {t.langToggle}
@@ -1228,7 +1314,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-2 min-h-[40px] text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap shrink-0"
             >
               <LogOut className="w-3.5 h-3.5" />
               {t.logout}
@@ -1238,13 +1324,13 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       </header>
 
       <div className="flex-1 max-w-[1440px] w-full mx-auto flex flex-col lg:flex-row">
-        {/* Sidebar Navigation */}
-        <aside className="lg:w-64 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 p-3 lg:p-4 shrink-0 no-print">
-          <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
+        {/* Sidebar / Mobile Sticky Navigation */}
+        <aside className="sticky top-0 z-30 lg:static lg:w-64 bg-white/95 backdrop-blur border-b lg:border-b-0 lg:border-r border-slate-200 p-2.5 sm:p-3 lg:p-4 shrink-0 no-print">
+          <nav className="flex lg:flex-col gap-1.5 lg:gap-1 overflow-x-auto lg:overflow-visible scrollbar-none">
             <button
               type="button"
               onClick={() => setSection('folders')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 section === 'folders'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -1256,7 +1342,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('search')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 section === 'search'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -1268,13 +1354,13 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('wanted')}
-              className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center justify-between gap-2 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 section === 'wanted'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
             >
-              <span className="inline-flex items-center gap-2.5">
+              <span className="inline-flex items-center gap-2 sm:gap-2.5">
                 <ShieldAlert className="w-4 h-4 shrink-0" />
                 {t.navWanted}
               </span>
@@ -1287,13 +1373,13 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('suspects')}
-              className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center justify-between gap-2 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 section === 'suspects'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
             >
-              <span className="inline-flex items-center gap-2.5">
+              <span className="inline-flex items-center gap-2 sm:gap-2.5">
                 <UserCheck className="w-4 h-4 shrink-0" />
                 {t.navSuspects}
               </span>
@@ -1302,7 +1388,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('criminal_records')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 section === 'criminal_records'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -1314,7 +1400,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('statistics')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 section === 'statistics'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -1326,7 +1412,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('history')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 section === 'history'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -1338,7 +1424,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('account_actions')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                 section === 'account_actions'
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-700 hover:bg-slate-100'
@@ -1351,7 +1437,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setSection('admin_setup')}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
                   section === 'admin_setup'
                     ? 'bg-slate-900 text-white'
                     : 'text-slate-700 hover:bg-slate-100'
@@ -1365,11 +1451,11 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         </aside>
 
         {/* Main Workspace Viewport */}
-        <main className="flex-1 p-4 sm:p-6 space-y-6 overflow-x-hidden">
+        <main className="flex-1 p-3 sm:p-6 space-y-4 sm:space-y-6 overflow-x-hidden">
           {/* Ornamental System Title Banner */}
-          <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-xl px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 no-print">
+          <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-xl px-4 py-3.5 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 no-print">
             <div>
-              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-amber-200 to-white">
+              <h1 className="text-lg sm:text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-amber-200 to-white">
                 {t.systemTitle}
               </h1>
               <p className="text-xs text-amber-300 font-medium mt-0.5">
@@ -1683,146 +1769,258 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                 </div>
 
                 {folderViewTab === 'tenants' ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
-                          <th className="py-3 px-4">{t.tenantNameLabel.replace(' *', '')}</th>
-                          <th className="py-3 px-4">{t.occupationLabel.replace(' *', '')}</th>
-                          <th className="py-3 px-4">{t.cityLabel.replace(' *', '')}</th>
-                          <th className="py-3 px-4">{t.kpiLandlords}</th>
-                          <th className="py-3 px-4 text-right">{t.detailsBtn}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {folderFilteredTenants.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="py-10 text-center text-sm text-slate-500">
-                              በዚህ ፎልደር ውስጥ የተመዘገበ ተከራይ የለም።
-                            </td>
-                          </tr>
-                        ) : (
-                          folderFilteredTenants.map((item) => (
-                            <tr key={item.tenantId} className="hover:bg-slate-50">
-                              <td className="py-3 px-4">
-                                <div className="flex items-center gap-2.5">
-                                  {(item.portraitImage || item.idFrontImage) && (
-                                    <img
-                                      src={item.portraitImage || item.idFrontImage}
-                                      alt={item.fullName}
-                                      className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
-                                    />
-                                  )}
-                                  <div>
-                                    <div className="font-semibold text-slate-900">{item.fullName}</div>
-                                    <div className="text-xs text-slate-500 tabular-nums">{item.phone}</div>
-                                  </div>
+                  <>
+                    {/* Mobile Tenant Cards */}
+                    <div className="md:hidden divide-y divide-slate-200">
+                      {folderFilteredTenants.length === 0 ? (
+                        <p className="py-10 px-4 text-center text-sm text-slate-500">
+                          በዚህ ፎልደር ውስጥ የተመዘገበ ተከራይ የለም።
+                        </p>
+                      ) : (
+                        folderFilteredTenants.map((item) => (
+                          <div key={item.tenantId} className="p-4 space-y-2.5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {sanitizeImageSrc(item.portraitImage || item.idFrontImage) && (
+                                  <img
+                                    src={sanitizeImageSrc(item.portraitImage || item.idFrontImage)}
+                                    alt={item.fullName}
+                                    className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+                                  />
+                                )}
+                                <div className="min-w-0">
+                                  <p className="font-bold text-sm text-slate-900 truncate">{item.fullName}</p>
+                                  <p className="text-xs text-slate-500 tabular-nums">{item.phone}</p>
                                 </div>
-                              </td>
-                              <td className="py-3 px-4">
-                                <div className="text-xs font-medium text-slate-800">
-                                  {item.occupation}
-                                  {item.isPoliceTenant && (
-                                    <span className="ml-1.5 text-blue-700 font-bold">(ፖሊስ ዲጅታል)</span>
-                                  )}
-                                </div>
-                                <div className="text-xs text-slate-500 font-mono-tabular">
-                                  {item.idNumber}
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-xs text-slate-600">
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDossier({
+                                    fullName: item.fullName,
+                                    phone: item.phone,
+                                    idNumber: item.idNumber,
+                                    roleLabel: item.isPoliceTenant ? 'ተከራይ (የፖሊስ አባል)' : 'ተከራይ',
+                                    address: `${item.city} / ${item.woreda} / ${item.kebele} (#${item.houseNumber}, ${item.roomLabel})`,
+                                    idFrontImage: item.idFrontImage,
+                                    idBackImage: item.idBackImage,
+                                    portraitImage: item.portraitImage,
+                                  })
+                                }
+                                className="px-3 py-1.5 min-h-[36px] bg-slate-900 text-white text-xs font-semibold rounded-lg shrink-0"
+                              >
+                                {t.openDossierBtn}
+                              </button>
+                            </div>
+                            <div className="text-xs text-slate-600 space-y-0.5">
+                              <p>
+                                {item.occupation}
+                                {item.isPoliceTenant && (
+                                  <span className="ml-1.5 text-blue-700 font-bold">(ፖሊስ ዲጅታል)</span>
+                                )}
+                                {' · '}
+                                <span className="font-mono-tabular">{item.idNumber}</span>
+                              </p>
+                              <p>
                                 {item.city} / {item.woreda} / {item.kebele} · #{item.houseNumber}
-                              </td>
-                              <td className="py-3 px-4 text-xs text-slate-600">
-                                <div>{item.landlordName}</div>
-                                <div className="tabular-nums text-slate-400">{item.landlordPhone}</div>
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDossier({
-                                      fullName: item.fullName,
-                                      phone: item.phone,
-                                      idNumber: item.idNumber,
-                                      roleLabel: item.isPoliceTenant ? 'ተከራይ (የፖሊስ አባል)' : 'ተከራይ',
-                                      address: `${item.city} / ${item.woreda} / ${item.kebele} (#${item.houseNumber}, ${item.roomLabel})`,
-                                      idFrontImage: item.idFrontImage,
-                                      idBackImage: item.idBackImage,
-                                      portraitImage: item.portraitImage,
-                                    })
-                                  }
-                                  className="text-xs font-semibold text-slate-900 hover:underline"
-                                >
-                                  {t.openDossierBtn}
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
-                          <th className="py-3 px-4">{t.fullNameLabel.replace(' *', '')}</th>
-                          <th className="py-3 px-4">Fayda ID</th>
-                          <th className="py-3 px-4">{t.cityLabel.replace(' *', '')}</th>
-                          <th className="py-3 px-4 text-right">{t.roomsStat}</th>
-                          <th className="py-3 px-4 text-right">{t.detailsBtn}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {folderFilteredLandlords.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="py-10 text-center text-sm text-slate-500">
-                              በዚህ ፎልደር ውስጥ የተመዘገበ አከራይ የለም።
-                            </td>
+                              </p>
+                              <p className="text-slate-500">
+                                {t.kpiLandlords}: {item.landlordName} ({item.landlordPhone})
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Desktop Tenant Table */}
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
+                            <th className="py-3 px-4">{t.tenantNameLabel.replace(' *', '')}</th>
+                            <th className="py-3 px-4">{t.occupationLabel.replace(' *', '')}</th>
+                            <th className="py-3 px-4">{t.cityLabel.replace(' *', '')}</th>
+                            <th className="py-3 px-4">{t.kpiLandlords}</th>
+                            <th className="py-3 px-4 text-right">{t.detailsBtn}</th>
                           </tr>
-                        ) : (
-                          folderFilteredLandlords.map((l) => (
-                            <tr key={l.landlordId} className="hover:bg-slate-50">
-                              <td className="py-3 px-4">
-                                <div className="font-semibold text-slate-900">{l.fullName}</div>
-                                <div className="text-xs text-slate-500 tabular-nums">{l.phone}</div>
-                              </td>
-                              <td className="py-3 px-4 text-xs font-mono-tabular text-slate-700">
-                                {l.faydaId}
-                              </td>
-                              <td className="py-3 px-4 text-xs text-slate-600">
-                                {l.city} / {l.woreda} / {l.kebele} · #{l.houseNumber}
-                              </td>
-                              <td className="py-3 px-4 text-right tabular-nums font-semibold">
-                                {l.roomCount}
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDossier({
-                                      fullName: l.fullName,
-                                      phone: l.phone,
-                                      idNumber: l.faydaId,
-                                      roleLabel: 'አከራይ',
-                                      address: `${l.city} / ${l.woreda} / ${l.kebele} (#${l.houseNumber})`,
-                                      idFrontImage: l.idFrontImage,
-                                      idBackImage: l.idBackImage,
-                                    })
-                                  }
-                                  className="text-xs font-semibold text-slate-900 hover:underline"
-                                >
-                                  {t.openDossierBtn}
-                                </button>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {folderFilteredTenants.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-10 text-center text-sm text-slate-500">
+                                በዚህ ፎልደር ውስጥ የተመዘገበ ተከራይ የለም።
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                          ) : (
+                            folderFilteredTenants.map((item) => (
+                              <tr key={item.tenantId} className="hover:bg-slate-50">
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2.5">
+                                    {sanitizeImageSrc(item.portraitImage || item.idFrontImage) && (
+                                      <img
+                                        src={sanitizeImageSrc(item.portraitImage || item.idFrontImage)}
+                                        alt={item.fullName}
+                                        className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
+                                      />
+                                    )}
+                                    <div>
+                                      <div className="font-semibold text-slate-900">{item.fullName}</div>
+                                      <div className="text-xs text-slate-500 tabular-nums">{item.phone}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="text-xs font-medium text-slate-800">
+                                    {item.occupation}
+                                    {item.isPoliceTenant && (
+                                      <span className="ml-1.5 text-blue-700 font-bold">(ፖሊስ ዲጅታል)</span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-slate-500 font-mono-tabular">
+                                    {item.idNumber}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-xs text-slate-600">
+                                  {item.city} / {item.woreda} / {item.kebele} · #{item.houseNumber}
+                                </td>
+                                <td className="py-3 px-4 text-xs text-slate-600">
+                                  <div>{item.landlordName}</div>
+                                  <div className="tabular-nums text-slate-400">{item.landlordPhone}</div>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDossier({
+                                        fullName: item.fullName,
+                                        phone: item.phone,
+                                        idNumber: item.idNumber,
+                                        roleLabel: item.isPoliceTenant ? 'ተከራይ (የፖሊስ አባል)' : 'ተከራይ',
+                                        address: `${item.city} / ${item.woreda} / ${item.kebele} (#${item.houseNumber}, ${item.roomLabel})`,
+                                        idFrontImage: item.idFrontImage,
+                                        idBackImage: item.idBackImage,
+                                        portraitImage: item.portraitImage,
+                                      })
+                                    }
+                                    className="text-xs font-semibold text-slate-900 hover:underline"
+                                  >
+                                    {t.openDossierBtn}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Mobile Landlord Cards */}
+                    <div className="md:hidden divide-y divide-slate-200">
+                      {folderFilteredLandlords.length === 0 ? (
+                        <p className="py-10 px-4 text-center text-sm text-slate-500">
+                          በዚህ ፎልደር ውስጥ የተመዘገበ አከራይ የለም።
+                        </p>
+                      ) : (
+                        folderFilteredLandlords.map((l) => (
+                          <div key={l.landlordId} className="p-4 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="font-bold text-sm text-slate-900 truncate">{l.fullName}</p>
+                                <p className="text-xs text-slate-500 tabular-nums">{l.phone}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDossier({
+                                    fullName: l.fullName,
+                                    phone: l.phone,
+                                    idNumber: l.faydaId,
+                                    roleLabel: 'አከራይ',
+                                    address: `${l.city} / ${l.woreda} / ${l.kebele} (#${l.houseNumber})`,
+                                    idFrontImage: l.idFrontImage,
+                                    idBackImage: l.idBackImage,
+                                  })
+                                }
+                                className="px-3 py-1.5 min-h-[36px] bg-slate-900 text-white text-xs font-semibold rounded-lg shrink-0"
+                              >
+                                {t.openDossierBtn}
+                              </button>
+                            </div>
+                            <div className="text-xs text-slate-600 space-y-0.5">
+                              <p className="font-mono-tabular">Fayda: {l.faydaId}</p>
+                              <p>
+                                {l.city} / {l.woreda} / {l.kebele} · #{l.houseNumber} ({l.roomCount} {t.roomsStat})
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Desktop Landlord Table */}
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
+                            <th className="py-3 px-4">{t.fullNameLabel.replace(' *', '')}</th>
+                            <th className="py-3 px-4">Fayda ID</th>
+                            <th className="py-3 px-4">{t.cityLabel.replace(' *', '')}</th>
+                            <th className="py-3 px-4 text-right">{t.roomsStat}</th>
+                            <th className="py-3 px-4 text-right">{t.detailsBtn}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {folderFilteredLandlords.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-10 text-center text-sm text-slate-500">
+                                በዚህ ፎልደር ውስጥ የተመዘገበ አከራይ የለም።
+                              </td>
+                            </tr>
+                          ) : (
+                            folderFilteredLandlords.map((l) => (
+                              <tr key={l.landlordId} className="hover:bg-slate-50">
+                                <td className="py-3 px-4">
+                                  <div className="font-semibold text-slate-900">{l.fullName}</div>
+                                  <div className="text-xs text-slate-500 tabular-nums">{l.phone}</div>
+                                </td>
+                                <td className="py-3 px-4 text-xs font-mono-tabular text-slate-700">
+                                  {l.faydaId}
+                                </td>
+                                <td className="py-3 px-4 text-xs text-slate-600">
+                                  {l.city} / {l.woreda} / {l.kebele} · #{l.houseNumber}
+                                </td>
+                                <td className="py-3 px-4 text-right tabular-nums font-semibold">
+                                  {l.roomCount}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDossier({
+                                        fullName: l.fullName,
+                                        phone: l.phone,
+                                        idNumber: l.faydaId,
+                                        roleLabel: 'አከራይ',
+                                        address: `${l.city} / ${l.woreda} / ${l.kebele} (#${l.houseNumber})`,
+                                        idFrontImage: l.idFrontImage,
+                                        idBackImage: l.idBackImage,
+                                      })
+                                    }
+                                    className="text-xs font-semibold text-slate-900 hover:underline"
+                                  >
+                                    {t.openDossierBtn}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -2138,20 +2336,20 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 items-center">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                   <select
                     value={wPriority}
                     onChange={(e) =>
                       setWPriority(e.target.value as 'critical' | 'high' | 'medium')
                     }
-                    className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                    className="px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white"
                   >
                     <option value="critical">አስቸኳይ / Critical</option>
                     <option value="high">ከፍተኛ / High</option>
                     <option value="medium">መካከለኛ / Medium</option>
                   </select>
 
-                  <label className="px-3 py-2 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
+                  <label className="px-3 py-2.5 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
                     {wPhoto ? 'ፎቶ ተጭኗል (ቀይር)' : 'ፎቶ ጫን'}
                     <input
                       type="file"
@@ -2162,9 +2360,9 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   </label>
                 </div>
 
-                {wPhoto && (
+                {sanitizeImageSrc(wPhoto) && (
                   <img
-                    src={wPhoto}
+                    src={sanitizeImageSrc(wPhoto)}
                     alt="Wanted Preview"
                     className="h-32 w-full object-contain border border-slate-200 rounded-lg"
                   />
@@ -2325,7 +2523,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                 />
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     type="tel"
                     value={susPhone}
@@ -2342,14 +2540,14 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 items-center">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                   <input
                     type="date"
                     value={susDate}
                     onChange={(e) => setSusDate(e.target.value)}
-                    className="px-3 py-2 border border-slate-300 rounded-lg text-sm tabular-nums"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm tabular-nums"
                   />
-                  <label className="px-3 py-2 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
+                  <label className="px-3 py-2.5 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
                     {susPhoto ? 'ፎቶ ተጭኗል' : 'የተጠርጣሪ ፎቶ ጫን'}
                     <input
                       type="file"
@@ -2378,7 +2576,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                 />
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <input
                     type="text"
                     required
@@ -2544,14 +2742,45 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                 </div>
               </div>
 
+              <div className="bg-slate-900 text-white rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2 border border-amber-400/30">
+                <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold">
+                  <ShieldCheck className="w-4 h-4 text-amber-300 shrink-0" />
+                  <span>
+                    {lang === 'am'
+                      ? 'ምስጢራዊ የፖሊስ የወንጀል እና የተጠርጣሪዎች መዝገብ — ለአከራዮች ፍፁም አይታይም'
+                      : 'Confidential Police Criminal & Suspect Registry — Strictly Hidden from Landlords'}
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono-tabular text-amber-200 bg-slate-800 px-2.5 py-1 rounded-md">
+                  {lang === 'am' ? 'ፖሊስ/አድሚን ብቻ' : 'Police & Admin Only'}
+                </span>
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <form
                   onSubmit={handleSaveCriminalRecord}
                   className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-5 space-y-4 self-start"
                 >
-                  <div className="border-b border-slate-100 pb-3">
-                    <h2 className="text-base font-bold text-slate-900">{t.criminalFormTitle}</h2>
-                    <p className="text-xs text-slate-500">{t.criminalFormDesc}</p>
+                  <div className="border-b border-slate-100 pb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900">
+                        {editingCriminalRecordId
+                          ? lang === 'am'
+                            ? 'የወንጀል / የተጠርጣሪ ሪከርድ ማስተካከያ'
+                            : 'Update Criminal / Suspect Record'
+                          : t.criminalFormTitle}
+                      </h2>
+                      <p className="text-xs text-slate-500">{t.criminalFormDesc}</p>
+                    </div>
+                    {editingCriminalRecordId && (
+                      <button
+                        type="button"
+                        onClick={resetCriminalRecordForm}
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-md shrink-0"
+                      >
+                        {lang === 'am' ? 'ሰርዝ' : 'Cancel'}
+                      </button>
+                    )}
                   </div>
 
                   {/* Quick link to tag an existing Tenant or Landlord */}
@@ -2620,7 +2849,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <input
                       type="tel"
                       value={crPhone}
@@ -2637,7 +2866,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <select
                       value={crType}
                       onChange={(e) => setCrType(e.target.value as RecordType)}
@@ -2652,7 +2881,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       type="date"
                       value={crDate}
                       onChange={(e) => setCrDate(e.target.value)}
-                      className="px-3 py-2 border border-slate-300 rounded-lg text-sm tabular-nums"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm tabular-nums"
                     />
                   </div>
 
@@ -2674,7 +2903,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <input
                       type="text"
                       required
@@ -2701,7 +2930,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 items-center">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                     <input
                       type="text"
                       required
@@ -2710,7 +2939,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       placeholder="ፖሊስ ጣቢያ"
                       className="px-3 py-2 border border-slate-300 rounded-lg text-xs"
                     />
-                    <label className="px-3 py-2 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
+                    <label className="px-3 py-2.5 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
                       {crPhoto ? 'ፎቶ ተጭኗል (ቀይር)' : 'ፎቶ ጫን'}
                       <input
                         type="file"
@@ -2729,13 +2958,30 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     />
                   )}
 
-                  <button
-                    type="submit"
-                    disabled={busy}
-                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg"
-                  >
-                    {busy ? '...' : 'የወንጀል / የተጠርጣሪ ሪከርድ መዝግብ'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={busy}
+                      className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg"
+                    >
+                      {busy
+                        ? '...'
+                        : editingCriminalRecordId
+                          ? lang === 'am'
+                            ? 'ለውጦችን አስቀምጥ'
+                            : 'Save Updates'
+                          : 'የወንጀል / የተጠርጣሪ ሪከርድ መዝግብ'}
+                    </button>
+                    {editingCriminalRecordId && (
+                      <button
+                        type="button"
+                        onClick={resetCriminalRecordForm}
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold rounded-lg"
+                      >
+                        {lang === 'am' ? 'ተው' : 'Cancel'}
+                      </button>
+                    )}
+                  </div>
                 </form>
 
                 {/* Right Column: Search Criminal Records by Name, ID, or Photograph + Tag Controls */}
@@ -2941,6 +3187,14 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                   )}
                                   <button
                                     type="button"
+                                    onClick={() => startEditCriminalRecord(c)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                    {lang === 'am' ? 'አስተካክል' : 'Edit'}
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() =>
                                       setDossier({
                                         fullName: c.personName,
@@ -3071,7 +3325,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     type="text"
                     value={credSearchName}
@@ -3232,7 +3486,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="p-3 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer">
                     {repNewFront ? 'የፊት መታወቂያ ተጭኗል' : 'የአዲስ አከራይ ፊት መታወቂያ *'}
                     <input
@@ -3431,7 +3685,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                     <select
                       value={offLevel}
                       onChange={(e) => setOffLevel(e.target.value as JurisdictionLevel)}
@@ -3480,7 +3734,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   </button>
                 </form>
 
-                {/* Police Logo Upload & Branding */}
+                {/* Police Logo, Mountain Peak Flags & Branding */}
                 <form
                   onSubmit={handleSaveBrandingSubmit}
                   className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-6 space-y-4"
@@ -3489,10 +3743,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     <ShieldCheck className="w-5 h-5 text-slate-900" />
                     <div>
                       <h2 className="text-base font-bold text-slate-900">
-                        የፖሊስ ሎጎ እና መጠሪያ መቀየሪያ
+                        የፖሊስ ሎጎ፣ ሰንደቅአላማ እና መጠሪያ መቀየሪያ
                       </h2>
                       <p className="text-xs text-slate-500">
-                        ሎጎውን ሲቀይሩ በሎጊን ገፅ እና በሁሉም ሲስተሙ ውስጥ ወዲያውኑ ይቀየራል።
+                        ሎጎውን፣ የቤኒሻንጉል ጉሙዝ ክልል እና የኢትዮጵያ ሰንደቅአላማ ሲቀይሩ በሎጊን ገፅ ላይ ወዲያውኑ ይታያል።
                       </p>
                     </div>
                   </div>
@@ -3501,9 +3755,9 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     <BrandingImage
                       src={brandLogo}
                       alt="Preview Logo"
-                      className="w-20 h-20 rounded-full object-cover border border-slate-200"
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border border-slate-200 shrink-0"
                     />
-                    <label className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg cursor-pointer">
+                    <label className="px-4 py-2.5 min-h-[40px] inline-flex items-center bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg cursor-pointer">
                       አዲስ የፖሊስ ሎጎ ጫን
                       <input
                         type="file"
@@ -3512,6 +3766,53 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                         onChange={(e) => void handleImageUpload(e, setBrandLogo)}
                       />
                     </label>
+                  </div>
+
+                  {/* Admin Uploadable Flags for Login Page Left & Right Mountain Peaks */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50/70">
+                      <p className="text-xs font-bold text-slate-800">
+                        የቤኒሻንጉል ጉሙዝ ክልል ሰንደቅአላማ (ግራ ተራራ)
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <BrandingImage
+                          src={brandRegionalFlag}
+                          alt="Benishangul-Gumuz Regional Flag"
+                          className="w-16 h-11 rounded object-contain border border-slate-300 shrink-0"
+                        />
+                        <label className="px-2.5 py-2 min-h-[36px] inline-flex items-center bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-medium rounded-lg cursor-pointer">
+                          ሰንደቅአላማ ጫን
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => void handleImageUpload(e, setBrandRegionalFlag, true)}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50/70">
+                      <p className="text-xs font-bold text-slate-800">
+                        የኢትዮጵያ ሰንደቅአላማ (ቀኝ ተራራ)
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <BrandingImage
+                          src={brandEthiopianFlag}
+                          alt="Ethiopian National Flag"
+                          className="w-16 h-11 rounded object-contain border border-slate-300 shrink-0"
+                        />
+                        <label className="px-2.5 py-2 min-h-[36px] inline-flex items-center bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-medium rounded-lg cursor-pointer">
+                          ሰንደቅአላማ ጫን
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => void handleImageUpload(e, setBrandEthiopianFlag, true)}
+                          />
+                        </label>
+                      </div>
+                    </div>
                   </div>
 
                   <input
@@ -3533,9 +3834,9 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   <button
                     type="submit"
                     disabled={busy}
-                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg"
+                    className="w-full py-2.5 min-h-[44px] bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg"
                   >
-                    ሎጎውንና መጠሪያውን አዘምን
+                    ሎጎ፣ ሰንደቅአላማ እና መጠሪያ አዘምን
                   </button>
                 </form>
               </div>
@@ -3659,7 +3960,52 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     </form>
                   )}
 
-                  <div className="overflow-x-auto">
+                  {/* Mobile Officers Cards */}
+                  <div className="md:hidden divide-y divide-slate-200">
+                    {officers.map((o) => (
+                      <div key={o.officerId} className="p-4 space-y-2 text-xs">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-bold text-slate-900 text-sm">
+                              {o.rank} {o.fullName}
+                              {!o.active && <span className="ml-1.5 text-red-600">(ታግዷል)</span>}
+                            </p>
+                            <p className="font-mono-tabular text-slate-600">{o.username}</p>
+                          </div>
+                          <span className="tabular-nums text-slate-500">{o.phone}</span>
+                        </div>
+                        <p className="text-slate-600">
+                          {o.jurisdictionLevel} · {o.city} {o.woreda} {o.kebele}
+                        </p>
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingOfficer(o);
+                              setEditOffUsername(o.username);
+                              setEditOffPass('');
+                              setEditOffActive(o.active);
+                            }}
+                            className="flex-1 py-2 px-3 min-h-[36px] inline-flex items-center justify-center gap-1 bg-blue-50 text-blue-700 rounded-lg font-semibold"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            አስተካክል
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteOfficerAccount(firebaseUid, actorName, o)}
+                            className="flex-1 py-2 px-3 min-h-[36px] inline-flex items-center justify-center gap-1 bg-red-50 text-red-700 rounded-lg font-semibold"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            ሰርዝ
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop Officers Table */}
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
@@ -3721,18 +4067,18 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
 
       {/* FULL PERSON DOSSIER & CRIMINAL RECORD CHECK MODAL (ALL PHOTOS PROMINENT + PRINTABLE) */}
       {dossier && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl max-w-3xl w-full max-h-[92vh] overflow-y-auto p-6 space-y-5">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
-              <div className="flex items-center gap-3">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-2.5 sm:p-4">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-3xl w-full max-h-[92dvh] overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-3 min-w-0">
                 <BrandingImage
                   src={branding.logoDataUrl}
                   alt="Police Logo"
-                  className="w-12 h-12 rounded-full object-cover border border-slate-200"
+                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover border border-slate-200 shrink-0"
                 />
-                <div>
-                  <p className="text-xs text-slate-500">{branding.commissionName}</p>
-                  <h3 className="text-lg font-bold text-slate-900">
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500 truncate">{branding.commissionName}</p>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">
                     {dossier.fullName} — ሙሉ ማህደርና የወንጀል ሪከርድ ፍተሻ
                   </h3>
                   <p className="text-xs text-slate-600 tabular-nums">
@@ -3753,7 +4099,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       type: 'suspect',
                     })
                   }
-                  className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg"
+                  className="px-3 py-2 min-h-[38px] bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg"
                 >
                   {t.tagAsSuspect}
                 </button>
@@ -3768,14 +4114,14 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       type: 'arrested',
                     })
                   }
-                  className="px-3 py-2 bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded-lg"
+                  className="px-3 py-2 min-h-[38px] bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded-lg"
                 >
                   {t.addCrimeRecordFromDossier}
                 </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-white text-xs font-medium rounded-lg"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[38px] bg-slate-900 text-white text-xs font-medium rounded-lg"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   {t.printBtn}
@@ -3783,7 +4129,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => setDossier(null)}
-                  className="px-3 py-2 bg-slate-100 text-slate-800 text-xs font-medium rounded-lg"
+                  className="px-3 py-2 min-h-[38px] bg-slate-100 text-slate-800 text-xs font-medium rounded-lg"
                 >
                   {t.closeBtn}
                 </button>
@@ -3791,33 +4137,33 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             </div>
 
             {/* Person Photos Prominently Shown First */}
-            {(dossier.portraitImage || dossier.idFrontImage || dossier.idBackImage) && (
+            {(sanitizeImageSrc(dossier.portraitImage) || sanitizeImageSrc(dossier.idFrontImage) || sanitizeImageSrc(dossier.idBackImage)) && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-                {dossier.portraitImage && (
+                {sanitizeImageSrc(dossier.portraitImage) && (
                   <div>
                     <p className="text-xs font-semibold text-slate-600 mb-1">የግለሰብ ፎቶ</p>
                     <img
-                      src={dossier.portraitImage}
+                      src={sanitizeImageSrc(dossier.portraitImage)}
                       alt="Portrait"
                       className="h-36 w-full object-contain bg-white border border-slate-200 rounded-lg"
                     />
                   </div>
                 )}
-                {dossier.idFrontImage && (
+                {sanitizeImageSrc(dossier.idFrontImage) && (
                   <div>
                     <p className="text-xs font-semibold text-slate-600 mb-1">መታወቂያ ፊት</p>
                     <img
-                      src={dossier.idFrontImage}
+                      src={sanitizeImageSrc(dossier.idFrontImage)}
                       alt="Front ID"
                       className="h-36 w-full object-contain bg-white border border-slate-200 rounded-lg"
                     />
                   </div>
                 )}
-                {dossier.idBackImage && (
+                {sanitizeImageSrc(dossier.idBackImage) && (
                   <div>
                     <p className="text-xs font-semibold text-slate-600 mb-1">መታወቂያ ኋላ</p>
                     <img
-                      src={dossier.idBackImage}
+                      src={sanitizeImageSrc(dossier.idBackImage)}
                       alt="Back ID"
                       className="h-36 w-full object-contain bg-white border border-slate-200 rounded-lg"
                     />

@@ -27,6 +27,8 @@ export interface BrandingSetting {
   commissionName: string;
   subtitle?: string;
   logoDataUrl: string;
+  regionalFlagDataUrl?: string;
+  ethiopianFlagDataUrl?: string;
   updatedByUid: string;
   updatedAt: unknown;
 }
@@ -191,6 +193,7 @@ export type ActivityActionType =
   | 'password_reset'
   | 'wanted_registered'
   | 'criminal_record_added'
+  | 'criminal_record_updated'
   | 'officer_created'
   | 'officer_updated'
   | 'user_deleted'

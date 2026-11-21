@@ -56,12 +56,36 @@ export async function verifyPassword(
   return diff === 0;
 }
 
+const SAFE_RASTER_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+const SAFE_LOCAL_ASSET_RE = /^\/?(?:src\/)?assets\/[a-zA-Z0-9_.\-/]+$/;
+const ALLOWED_UPLOAD_MIME_RE = /^image\/(jpeg|jpg|png|webp|gif|bmp|heic|heif|avif)$/i;
+
+export function sanitizeImageSrc(src?: string): string {
+  if (!src || typeof src !== 'string') return '';
+  const trimmed = src.trim();
+  if (!trimmed || trimmed.includes('..')) return '';
+  if (SAFE_LOCAL_ASSET_RE.test(trimmed)) return trimmed;
+  if (SAFE_RASTER_DATA_URL_RE.test(trimmed)) return trimmed;
+  return '';
+}
+
 export async function compressImageFile(
   file: File,
   maxDimension = 760,
   quality = 0.68,
-  maxChars = 280000
+  maxChars = 280000,
+  preserveTransparency = false
 ): Promise<string> {
+  if (file.size > 15 * 1024 * 1024) {
+    throw new Error('የምስሉ መጠን በጣም ትልቅ ነው (ከ15MB በታች ይሁን)');
+  }
+  if (file.type && !ALLOWED_UPLOAD_MIME_RE.test(file.type)) {
+    throw new Error('የተፈቀደ የምስል ፋይል (JPG, PNG, WEBP) ብቻ ይምረጡ');
+  }
+
+  const keepAlpha =
+    preserveTransparency && /^image\/(png|webp|gif)$/i.test(file.type || '');
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('ምስሉን ማንበብ አልተቻለም'));
@@ -87,25 +111,30 @@ export async function compressImageFile(
           reject(new Error('Canvas context error'));
           return;
         }
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
+        if (!keepAlpha) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+        }
         ctx.drawImage(img, 0, 0, width, height);
 
+        const mime = keepAlpha ? 'image/webp' : 'image/jpeg';
         let currentQuality = quality;
-        let dataUrl = canvas.toDataURL('image/jpeg', currentQuality);
+        let dataUrl = canvas.toDataURL(mime, currentQuality);
         while (dataUrl.length > maxChars && currentQuality > 0.25) {
           currentQuality -= 0.12;
-          dataUrl = canvas.toDataURL('image/jpeg', currentQuality);
+          dataUrl = canvas.toDataURL(mime, currentQuality);
         }
         if (dataUrl.length > maxChars) {
           canvas.width = Math.round(width * 0.7);
           canvas.height = Math.round(height * 0.7);
           const ctx2 = canvas.getContext('2d');
           if (ctx2) {
-            ctx2.fillStyle = '#ffffff';
-            ctx2.fillRect(0, 0, canvas.width, canvas.height);
+            if (!keepAlpha) {
+              ctx2.fillStyle = '#ffffff';
+              ctx2.fillRect(0, 0, canvas.width, canvas.height);
+            }
             ctx2.drawImage(img, 0, 0, canvas.width, canvas.height);
-            dataUrl = canvas.toDataURL('image/jpeg', 0.55);
+            dataUrl = canvas.toDataURL(mime, 0.55);
           }
         }
         resolve(dataUrl);

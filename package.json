@@ -19,6 +19,7 @@
     "docx": "^9.16.0",
     "dotenv": "^17.2.3",
     "eslint": "^10.15.0",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "firebase": "^13.4.0",
     "html2canvas": "^1.4.1",

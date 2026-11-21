@@ -1,10 +1,25 @@
 @import "tailwindcss";
 
 @layer base {
+  html,
+  body {
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
     font-family: "Plus Jakarta Sans", "Noto Sans Ethiopic", system-ui, -apple-system, sans-serif;
     color: #0f172a;
     background-color: #f8fafc;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
   }
 
   .font-mono-tabular {
@@ -14,6 +29,47 @@
 
   .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes sea-float {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-7px) scale(1.015);
+  }
+}
+
+@keyframes flag-breeze {
+  0%, 100% {
+    transform: perspective(480px) rotateY(0deg) skewY(0deg);
+  }
+  50% {
+    transform: perspective(480px) rotateY(-8deg) skewY(1.2deg);
+  }
+}
+
+.animate-sea-float {
+  animation: sea-float 7s ease-in-out infinite;
+}
+
+.animate-flag-breeze {
+  animation: flag-breeze 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-sea-float,
+  .animate-flag-breeze {
+    animation: none;
   }
 }
 

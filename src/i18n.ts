@@ -178,6 +178,24 @@ export interface AppStrings {
   exportPdf: string;
   exportPpt: string;
   exportPrint: string;
+
+  // Report Generator
+  reportGeneratorTitle: string;
+  reportGeneratorSubtitle: string;
+  customTitleLabel: string;
+  dateFromLabel: string;
+  dateToLabel: string;
+  recordStatusFilterLabel: string;
+  includeSectionsLabel: string;
+  sectionSummary: string;
+  sectionCharts: string;
+  sectionAreaTable: string;
+  sectionLandlordsTable: string;
+  sectionTenantsTable: string;
+  sectionCriminalTable: string;
+  landlordsReportHeading: string;
+  tenantsReportHeading: string;
+  criminalReportHeading: string;
 }
 
 export const DICT: Record<Lang, AppStrings> = {
@@ -355,6 +373,23 @@ export const DICT: Record<Lang, AppStrings> = {
     exportPdf: 'PDF (.pdf)',
     exportPpt: 'PowerPoint (.pptx)',
     exportPrint: 'ፕሪንት (Print)',
+
+    reportGeneratorTitle: 'የሪፖርት ማመንጫ (Report Generator)',
+    reportGeneratorSubtitle: 'የአከራይ/ተከራይ ስታቲስቲክስ እና የወንጀል/ተጠርጣሪ ሪከርዶችን መርጠው በPDF፣ በExcel ወይም በWord ያውርዱ።',
+    customTitleLabel: 'የሪፖርት ርዕስ (አማራጭ)',
+    dateFromLabel: 'ከቀን ጀምሮ',
+    dateToLabel: 'እስከ ቀን',
+    recordStatusFilterLabel: 'የወንጀል ሪከርድ ሁኔታ',
+    includeSectionsLabel: 'በሪፖርቱ ውስጥ የሚካተቱ ክፍሎች',
+    sectionSummary: 'ዋና ማጠቃለያ (KPIs)',
+    sectionCharts: 'ስታቲስቲክስ ግራፎች',
+    sectionAreaTable: 'በወረዳ/ቀበሌ ሰንጠረዥ',
+    sectionLandlordsTable: 'የአከራዮች ዝርዝር',
+    sectionTenantsTable: 'የተከራዮች ዝርዝር',
+    sectionCriminalTable: 'የወንጀልና የተጠርጣሪ ሪከርዶች',
+    landlordsReportHeading: 'የተመዘገቡ አከራዮች ዝርዝር',
+    tenantsReportHeading: 'የተመዘገቡ ተከራዮች ዝርዝር',
+    criminalReportHeading: 'የእስር፣ የተጠርጣሪ እና የወንጀል ሪከርዶች ዝርዝር',
   },
   en: {
     langToggle: 'አማርኛ',
@@ -530,5 +565,22 @@ export const DICT: Record<Lang, AppStrings> = {
     exportPdf: 'PDF (.pdf)',
     exportPpt: 'PowerPoint (.pptx)',
     exportPrint: 'Print',
+
+    reportGeneratorTitle: 'Report Generator',
+    reportGeneratorSubtitle: 'Customize and export Landlord/Tenant statistics and Criminal Records to PDF, Excel, or Word.',
+    customTitleLabel: 'Report Title (Optional)',
+    dateFromLabel: 'From Date',
+    dateToLabel: 'To Date',
+    recordStatusFilterLabel: 'Criminal Record Status',
+    includeSectionsLabel: 'Include Sections in Report',
+    sectionSummary: 'Executive Summary KPIs',
+    sectionCharts: 'Visual Charts',
+    sectionAreaTable: 'Area Breakdown Tables',
+    sectionLandlordsTable: 'Landlords Registry',
+    sectionTenantsTable: 'Tenants Registry',
+    sectionCriminalTable: 'Criminal & Suspect Records',
+    landlordsReportHeading: 'Registered Landlords Directory',
+    tenantsReportHeading: 'Registered Tenants Directory',
+    criminalReportHeading: 'Criminal & Suspect Records Ledger',
   },
 };

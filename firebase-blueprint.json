@@ -39,12 +39,14 @@
     },
     "BrandingSetting": {
       "title": "BrandingSetting",
-      "description": "Publicly readable Commission branding configuration (Police logo and title) editable only by Admin.",
+      "description": "Publicly readable Commission branding configuration (Police logo, regional & Ethiopian flags, and title) editable only by Admin.",
       "type": "object",
       "properties": {
         "commissionName": { "type": "string", "maxLength": 200 },
         "subtitle": { "type": "string", "maxLength": 200 },
         "logoDataUrl": { "type": "string", "maxLength": 450000 },
+        "regionalFlagDataUrl": { "type": "string", "maxLength": 450000 },
+        "ethiopianFlagDataUrl": { "type": "string", "maxLength": 450000 },
         "updatedByUid": { "type": "string", "maxLength": 128 },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -362,6 +364,7 @@
             "password_reset",
             "wanted_registered",
             "criminal_record_added",
+            "criminal_record_updated",
             "officer_created",
             "officer_updated",
             "user_deleted",

@@ -22,7 +22,13 @@ import type {
   Landlord,
   Tenant,
 } from '../types';
-import { compressImageFile, formatDateAm, toJsDate } from '../utils/crypto';
+import {
+  compressImageFile,
+  formatDateAm,
+  sanitizeImageSrc,
+  toJsDate,
+  verifyPassword,
+} from '../utils/crypto';
 import { OCCUPATION_OPTIONS } from '../utils/seedData';
 import {
   markTenantMovedOut,
@@ -335,6 +341,20 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     setErrorMsg('');
     setSuccessMsg('');
     try {
+      const passOk = await verifyPassword(
+        newPropPass,
+        landlord.passwordSalt,
+        landlord.passwordHash
+      );
+      if (!passOk) {
+        setErrorMsg(
+          lang === 'am'
+            ? 'የገባው የይለፍ ቃል ከመለያዎ የይለፍ ቃል ጋር አይመሳሰልም።'
+            : 'Entered password does not match your account password.'
+        );
+        return;
+      }
+
       const created = await registerLandlord(
         firebaseUid,
         {
@@ -412,15 +432,15 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* 3-Zone Top Header */}
-      <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 sm:gap-6">
-          <div className="flex items-center gap-3 min-w-0">
+      <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-6">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <BrandingImage
               src={branding.logoDataUrl}
               alt={branding.commissionName}
-              className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-slate-200 shrink-0"
             />
-            <span className="text-sm sm:text-base font-bold text-slate-900 whitespace-nowrap truncate">
+            <span className="text-xs sm:text-base font-bold text-slate-900 whitespace-nowrap truncate">
               {branding.commissionName}
             </span>
           </div>
@@ -464,11 +484,11 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
             </button>
           </nav>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={onToggleLang}
-              className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1 px-2.5 py-2 min-h-[40px] text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
             >
               <Globe className="w-3.5 h-3.5" />
               {t.langToggle}
@@ -476,7 +496,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-2 min-h-[40px] text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap shrink-0"
             >
               <LogOut className="w-3.5 h-3.5" />
               {t.logout}
@@ -485,12 +505,12 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         </div>
       </header>
 
-      {/* Mobile Navigation Bar */}
-      <div className="md:hidden bg-white border-b border-slate-200 px-3 py-2 flex gap-1.5 overflow-x-auto">
+      {/* Mobile Sticky Navigation Bar */}
+      <div className="md:hidden sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-3 py-2 flex gap-1.5 overflow-x-auto scrollbar-none">
         <button
           type="button"
           onClick={() => setTab('register_tenant')}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap ${
+          className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 ${
             tab === 'register_tenant' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
           }`}
         >
@@ -499,7 +519,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         <button
           type="button"
           onClick={() => setTab('my_tenants')}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap ${
+          className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 ${
             tab === 'my_tenants' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
           }`}
         >
@@ -508,7 +528,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         <button
           type="button"
           onClick={() => setTab('change_address')}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap ${
+          className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 ${
             tab === 'change_address' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
           }`}
         >
@@ -517,7 +537,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         <button
           type="button"
           onClick={() => setTab('history')}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap ${
+          className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 ${
             tab === 'history' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
           }`}
         >
@@ -525,10 +545,10 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         </button>
       </div>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Ornamental System Title Banner */}
-        <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-xl px-6 py-4 text-center">
-          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-amber-200 to-white">
+        <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-xl px-4 py-3.5 sm:px-6 sm:py-4 text-center">
+          <h2 className="text-lg sm:text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-amber-200 to-white">
             {t.systemTitle}
           </h2>
           <p className="text-xs text-amber-300 font-medium mt-0.5">{branding.commissionName}</p>
@@ -596,7 +616,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
 
         {/* TAB 1: REGISTER TENANT (NEW HOUSE OR REPLACING PREVIOUS TENANT) */}
         {tab === 'register_tenant' && (
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
+          <section className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6">
             <div className="border-b border-slate-100 pb-4 mb-5">
               <h2 className="text-lg font-bold text-slate-900">{t.tenantFormTitle}</h2>
               <p className="text-xs text-slate-500 mt-1">
@@ -756,19 +776,19 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     {t.roomAndDateLabel}
                   </label>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
                       type="text"
                       value={roomLabel}
                       onChange={(e) => setRoomLabel(e.target.value)}
                       placeholder="ክፍል 1"
-                      className="w-1/2 px-2.5 py-2.5 border border-slate-300 rounded-lg text-xs"
+                      className="w-full px-2.5 py-2.5 border border-slate-300 rounded-lg text-xs"
                     />
                     <input
                       type="date"
                       value={moveInDate}
                       onChange={(e) => setMoveInDate(e.target.value)}
-                      className="w-1/2 px-2 py-2.5 border border-slate-300 rounded-lg text-xs tabular-nums"
+                      className="w-full px-2.5 py-2.5 border border-slate-300 rounded-lg text-xs tabular-nums"
                     />
                   </div>
                 </div>
@@ -850,8 +870,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                       {t.idFrontLabel}
                     </label>
                     <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-white rounded-lg p-3 cursor-pointer hover:bg-slate-50">
-                      {idFrontImage ? (
-                        <img src={idFrontImage} alt="ID Front" className="h-28 w-full object-contain" />
+                      {sanitizeImageSrc(idFrontImage) ? (
+                        <img src={sanitizeImageSrc(idFrontImage)} alt="ID Front" className="h-28 w-full object-contain" />
                       ) : (
                         <div className="flex items-center gap-1.5 text-xs text-slate-600 py-6">
                           <Upload className="w-4 h-4" />
@@ -872,8 +892,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                       {t.idBackLabel}
                     </label>
                     <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-white rounded-lg p-3 cursor-pointer hover:bg-slate-50">
-                      {idBackImage ? (
-                        <img src={idBackImage} alt="ID Back" className="h-28 w-full object-contain" />
+                      {sanitizeImageSrc(idBackImage) ? (
+                        <img src={sanitizeImageSrc(idBackImage)} alt="ID Back" className="h-28 w-full object-contain" />
                       ) : (
                         <div className="flex items-center gap-1.5 text-xs text-slate-600 py-6">
                           <Upload className="w-4 h-4" />
@@ -894,8 +914,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                       {t.portraitLabel}
                     </label>
                     <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-white rounded-lg p-3 cursor-pointer hover:bg-slate-50">
-                      {portraitImage ? (
-                        <img src={portraitImage} alt="Portrait" className="h-28 w-full object-contain" />
+                      {sanitizeImageSrc(portraitImage) ? (
+                        <img src={sanitizeImageSrc(portraitImage)} alt="Portrait" className="h-28 w-full object-contain" />
                       ) : (
                         <div className="flex items-center gap-1.5 text-xs text-slate-600 py-6">
                           <Upload className="w-4 h-4" />
@@ -916,7 +936,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg inline-flex items-center gap-2 transition-colors"
+                  className="w-full sm:w-auto px-6 py-3 min-h-[44px] bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg inline-flex items-center justify-center gap-2 transition-colors"
                 >
                   <Eye className="w-4 h-4" />
                   {t.reviewBeforeSendBtn}
@@ -929,7 +949,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         {/* TAB 2: MY TENANTS (STRICTLY OWN TENANTS) */}
         {tab === 'my_tenants' && (
           <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold text-slate-900">{t.myTenantsTitle}</h2>
                 <p className="text-xs text-slate-500">{t.myTenantsSubtitle}</p>
@@ -937,7 +957,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setTab('register_tenant')}
-                className="px-3.5 py-2 bg-slate-900 text-white text-xs font-medium rounded-lg hover:bg-slate-800 inline-flex items-center gap-1.5"
+                className="w-full sm:w-auto px-3.5 py-2.5 min-h-[40px] bg-slate-900 text-white text-xs font-medium rounded-lg hover:bg-slate-800 inline-flex items-center justify-center gap-1.5"
               >
                 <Plus className="w-3.5 h-3.5" />
                 {t.addNewTenantBtn}
@@ -951,82 +971,147 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => setTab('register_tenant')}
-                  className="px-4 py-2 bg-slate-900 text-white text-xs font-medium rounded-lg"
+                  className="px-4 py-2.5 min-h-[40px] bg-slate-900 text-white text-xs font-medium rounded-lg"
                 >
                   {t.registerFirstTenantBtn}
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
-                      <th className="py-3 px-4">{t.tenantNameLabel.replace(' *', '')}</th>
-                      <th className="py-3 px-4">{t.tenantPhoneLabel.replace(' *', '')}</th>
-                      <th className="py-3 px-4">{t.occupationLabel.replace(' *', '')}</th>
-                      <th className="py-3 px-4">{t.livingArrangementLabel.replace(' *', '')}</th>
-                      <th className="py-3 px-4">{t.roomAndDateLabel}</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {tenants.map((item) => (
-                      <tr key={item.tenantId} className="hover:bg-slate-50">
-                        <td className="py-3 px-4">
-                          <div className="font-medium text-slate-900">{item.fullName}</div>
-                          {item.replacedTenantName && (
-                            <div className="text-xs text-amber-700">
-                              {lang === 'am'
-                                ? `በ ${item.replacedTenantName} ምትክ`
-                                : `Replaced ${item.replacedTenantName}`}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 tabular-nums text-slate-600">{item.phone}</td>
-                        <td className="py-3 px-4 text-slate-600">
-                          <div>{item.occupation}</div>
-                          <div className="text-xs text-slate-400 font-mono-tabular">{item.idNumber}</div>
-                        </td>
-                        <td className="py-3 px-4 text-xs text-slate-600">
+              <>
+                {/* Mobile Card List */}
+                <div className="sm:hidden divide-y divide-slate-200">
+                  {tenants.map((item) => (
+                    <div key={item.tenantId} className="p-4 space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-slate-900 truncate">{item.fullName}</p>
+                          <p className="text-xs text-slate-600 tabular-nums mt-0.5">{item.phone}</p>
+                        </div>
+                        <span
+                          className={`text-[11px] font-semibold px-2 py-0.5 rounded shrink-0 ${
+                            item.status === 'active'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                          }`}
+                        >
+                          {item.status === 'active' ? t.statusActive : t.statusMovedOut}
+                        </span>
+                      </div>
+                      {item.replacedTenantName && (
+                        <p className="text-xs text-amber-700">
+                          {lang === 'am'
+                            ? `በ ${item.replacedTenantName} ምትክ`
+                            : `Replaced ${item.replacedTenantName}`}
+                        </p>
+                      )}
+                      <div className="text-xs text-slate-600 space-y-0.5">
+                        <p>
+                          {item.occupation} · <span className="font-mono-tabular">{item.idNumber}</span>
+                        </p>
+                        <p className="tabular-nums">
+                          {item.roomLabel} · {item.moveInDate}
+                        </p>
+                        <p className="text-slate-500">
                           {item.livingArrangement === 'alone'
                             ? t.aloneOption
-                            : `${item.coResidents.join('፣ ')}`}
-                        </td>
-                        <td className="py-3 px-4 text-xs text-slate-600 tabular-nums">
-                          {item.roomLabel} · {item.moveInDate}
-                        </td>
-                        <td className="py-3 px-4 text-xs font-medium">
-                          {item.status === 'active' ? (
-                            <span className="text-emerald-700">{t.statusActive}</span>
-                          ) : (
-                            <span className="text-slate-500">{t.statusMovedOut}</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right space-x-3 whitespace-nowrap">
+                            : item.coResidents.join('፣ ')}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTenant(item)}
+                          className="flex-1 py-2 px-3 min-h-[40px] text-xs font-semibold text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                        >
+                          {t.detailsBtn}
+                        </button>
+                        {item.status === 'active' && (
                           <button
                             type="button"
-                            onClick={() => setSelectedTenant(item)}
-                            className="text-xs font-medium text-slate-700 hover:text-slate-900 underline"
+                            disabled={busy}
+                            onClick={() => void handleMoveOutTenant(item)}
+                            className="flex-1 py-2 px-3 min-h-[40px] text-xs font-semibold text-amber-900 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg"
                           >
-                            {t.detailsBtn}
+                            {t.markMovedOutBtn}
                           </button>
-                          {item.status === 'active' && (
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
+                        <th className="py-3 px-4">{t.tenantNameLabel.replace(' *', '')}</th>
+                        <th className="py-3 px-4">{t.tenantPhoneLabel.replace(' *', '')}</th>
+                        <th className="py-3 px-4">{t.occupationLabel.replace(' *', '')}</th>
+                        <th className="py-3 px-4">{t.livingArrangementLabel.replace(' *', '')}</th>
+                        <th className="py-3 px-4">{t.roomAndDateLabel}</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {tenants.map((item) => (
+                        <tr key={item.tenantId} className="hover:bg-slate-50">
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-slate-900">{item.fullName}</div>
+                            {item.replacedTenantName && (
+                              <div className="text-xs text-amber-700">
+                                {lang === 'am'
+                                  ? `በ ${item.replacedTenantName} ምትክ`
+                                  : `Replaced ${item.replacedTenantName}`}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 tabular-nums text-slate-600">{item.phone}</td>
+                          <td className="py-3 px-4 text-slate-600">
+                            <div>{item.occupation}</div>
+                            <div className="text-xs text-slate-400 font-mono-tabular">{item.idNumber}</div>
+                          </td>
+                          <td className="py-3 px-4 text-xs text-slate-600">
+                            {item.livingArrangement === 'alone'
+                              ? t.aloneOption
+                              : `${item.coResidents.join('፣ ')}`}
+                          </td>
+                          <td className="py-3 px-4 text-xs text-slate-600 tabular-nums">
+                            {item.roomLabel} · {item.moveInDate}
+                          </td>
+                          <td className="py-3 px-4 text-xs font-medium">
+                            {item.status === 'active' ? (
+                              <span className="text-emerald-700">{t.statusActive}</span>
+                            ) : (
+                              <span className="text-slate-500">{t.statusMovedOut}</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right space-x-3 whitespace-nowrap">
                             <button
                               type="button"
-                              disabled={busy}
-                              onClick={() => void handleMoveOutTenant(item)}
-                              className="text-xs font-medium text-amber-700 hover:underline"
+                              onClick={() => setSelectedTenant(item)}
+                              className="text-xs font-medium text-slate-700 hover:text-slate-900 underline"
                             >
-                              {t.markMovedOutBtn}
+                              {t.detailsBtn}
                             </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                            {item.status === 'active' && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void handleMoveOutTenant(item)}
+                                className="text-xs font-medium text-amber-700 hover:underline"
+                              >
+                                {t.markMovedOutBtn}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         )}
@@ -1302,11 +1387,11 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg">
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-lg">
                 <button
                   type="button"
                   onClick={() => setHistoryFilter('all')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                  className={`px-3 py-1.5 min-h-[36px] text-xs font-medium rounded-md ${
                     historyFilter === 'all' ? 'bg-slate-900 text-white' : 'text-slate-600'
                   }`}
                 >
@@ -1315,7 +1400,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => setHistoryFilter('tenants')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                  className={`px-3 py-1.5 min-h-[36px] text-xs font-medium rounded-md ${
                     historyFilter === 'tenants' ? 'bg-slate-900 text-white' : 'text-slate-600'
                   }`}
                 >
@@ -1324,7 +1409,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => setHistoryFilter('address')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                  className={`px-3 py-1.5 min-h-[36px] text-xs font-medium rounded-md ${
                     historyFilter === 'address' ? 'bg-slate-900 text-white' : 'text-slate-600'
                   }`}
                 >
@@ -1362,8 +1447,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
 
       {/* Pre-Send Verification Modal */}
       {reviewOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-5">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-2.5 sm:p-4">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-2xl w-full max-h-[90dvh] overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-5">
             <div className="flex items-center gap-3 border-b border-slate-200 pb-3">
               <UserCheck className="w-5 h-5 text-slate-900" />
               <div>
@@ -1411,12 +1496,12 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {portraitImage && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {sanitizeImageSrc(portraitImage) && (
                 <div>
                   <p className="text-xs text-slate-500 mb-1">{t.portraitLabel}</p>
                   <img
-                    src={portraitImage}
+                    src={sanitizeImageSrc(portraitImage)}
                     alt="Portrait"
                     className="h-32 w-full object-contain border border-slate-200 rounded-lg"
                   />
@@ -1425,7 +1510,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               <div>
                 <p className="text-xs text-slate-500 mb-1">{t.idFrontLabel}</p>
                 <img
-                  src={idFrontImage}
+                  src={sanitizeImageSrc(idFrontImage)}
                   alt="Front"
                   className="h-32 w-full object-contain border border-slate-200 rounded-lg"
                 />
@@ -1433,18 +1518,18 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               <div>
                 <p className="text-xs text-slate-500 mb-1">{t.idBackLabel}</p>
                 <img
-                  src={idBackImage}
+                  src={sanitizeImageSrc(idBackImage)}
                   alt="Back"
                   className="h-32 w-full object-contain border border-slate-200 rounded-lg"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5 sm:gap-3 pt-2 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => setReviewOpen(false)}
-                className="px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
               >
                 {t.backToEditBtn}
               </button>
@@ -1452,7 +1537,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                 type="button"
                 disabled={busy}
                 onClick={() => void handleConfirmSubmitTenant()}
-                className="px-5 py-2.5 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg inline-flex items-center gap-2"
+                className="w-full sm:w-auto px-5 py-2.5 min-h-[44px] text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg inline-flex items-center justify-center gap-2"
               >
                 <Send className="w-4 h-4" />
                 {busy ? t.sendingBtn : t.sendToPoliceBtn}
@@ -1464,11 +1549,11 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
 
       {/* Tenant Details Modal with Full Photos */}
       {selectedTenant && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">{selectedTenant.fullName}</h3>
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-2.5 sm:p-4">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-2xl w-full max-h-[90dvh] overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-slate-900 truncate">{selectedTenant.fullName}</h3>
                 <p className="text-xs text-slate-500 tabular-nums">
                   {selectedTenant.phone} · {selectedTenant.roomLabel} · {selectedTenant.moveInDate}
                 </p>
@@ -1476,7 +1561,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedTenant(null)}
-                className="px-3 py-1.5 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg"
+                className="px-3.5 py-2 min-h-[40px] text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg shrink-0"
               >
                 {t.closeBtn}
               </button>
@@ -1518,11 +1603,11 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {selectedTenant.portraitImage && (
+              {sanitizeImageSrc(selectedTenant.portraitImage) && (
                 <div>
                   <p className="text-xs text-slate-500 mb-1">{t.portraitLabel}</p>
                   <img
-                    src={selectedTenant.portraitImage}
+                    src={sanitizeImageSrc(selectedTenant.portraitImage)}
                     alt="Portrait"
                     className="h-36 w-full object-contain border border-slate-200 rounded-lg"
                   />
@@ -1531,7 +1616,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               <div>
                 <p className="text-xs text-slate-500 mb-1">{t.idFrontLabel}</p>
                 <img
-                  src={selectedTenant.idFrontImage}
+                  src={sanitizeImageSrc(selectedTenant.idFrontImage)}
                   alt="Front ID"
                   className="h-36 w-full object-contain border border-slate-200 rounded-lg"
                 />
@@ -1539,7 +1624,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               <div>
                 <p className="text-xs text-slate-500 mb-1">{t.idBackLabel}</p>
                 <img
-                  src={selectedTenant.idBackImage}
+                  src={sanitizeImageSrc(selectedTenant.idBackImage)}
                   alt="Back ID"
                   className="h-36 w-full object-contain border border-slate-200 rounded-lg"
                 />

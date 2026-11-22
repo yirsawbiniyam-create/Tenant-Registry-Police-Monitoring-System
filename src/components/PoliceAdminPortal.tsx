@@ -3,15 +3,17 @@ import {
   AlertOctagon,
   BarChart3,
   Camera,
+  Check,
   CheckCircle2,
   ChevronRight,
+  Cloud,
+  Copy,
   Edit3,
   FileWarning,
   Folder,
   FolderOpen,
   Globe,
   History,
-  ImagePlus,
   KeyRound,
   LogOut,
   Printer,
@@ -40,13 +42,13 @@ import type {
   WantedPerson,
 } from '../types';
 import {
-  compressImageFile,
   formatDateAm,
   normalizePhone,
   normalizeText,
   sanitizeImageSrc,
   toJsDate,
 } from '../utils/crypto';
+import { FIREBASE_PROJECT_ID, getHostnamesToAuthorize } from '../utils/domainConfig';
 import {
   addJurisdiction,
   checkWantedMatch,
@@ -55,29 +57,58 @@ import {
   createWantedAlertIfMissing,
   createWantedPerson,
   deleteCriminalRecord,
+  deleteJurisdiction,
   deleteLandlordAccount,
   deleteOfficerAccount,
   deleteWantedPerson,
   ensureAdminCredentialsSeeded,
   replaceLandlordOwner,
   saveBranding,
+  seedDefaultJurisdictionsIfEmpty,
   subscribeAdminCredentials,
   subscribePoliceData,
   updateAdminCredentials,
   updateAlertStatus,
   updateCriminalRecord,
   updateCriminalRecordType,
+  updateJurisdiction,
   updateLandlordCredentials,
   updateOfficerCredentials,
   updateWantedStatus,
 } from '../services/firestoreService';
 import {
+  addFallbackJurisdiction,
+  createFallbackCriminalRecord,
+  createFallbackPoliceOfficer,
+  createFallbackWantedAlertIfMissing,
+  createFallbackWantedPerson,
+  deleteFallbackCriminalRecord,
+  deleteFallbackJurisdiction,
+  deleteFallbackLandlordAccount,
+  deleteFallbackOfficerAccount,
+  deleteFallbackWantedPerson,
+  replaceFallbackLandlordOwner,
+  saveFallbackBranding,
+  subscribeFallbackStore,
+  updateFallbackAdminCredentials,
+  updateFallbackAlertStatus,
+  updateFallbackCriminalRecord,
+  updateFallbackCriminalRecordType,
+  updateFallbackJurisdiction,
+  updateFallbackLandlordCredentials,
+  updateFallbackOfficerCredentials,
+  updateFallbackWantedStatus,
+} from '../utils/localFallback';
+import {
   DEFAULT_ETHIOPIAN_FLAG_PATH,
+  DEFAULT_REGION_NAME,
   DEFAULT_REGIONAL_FLAG_PATH,
+  inferZoneForCity,
   resolveEthiopianFlagSrc,
   resolveRegionalFlagSrc,
 } from '../utils/seedData';
 import { BrandingImage } from './BrandingImage';
+import { SmartPhotoInput } from './SmartPhotoInput';
 import {
   computeRepeatOffendersCount,
   StatisticsReportsView,
@@ -85,6 +116,7 @@ import {
 import { DICT, type Lang } from '../i18n';
 
 interface PoliceAdminPortalProps {
+  isCloudConnected: boolean;
   lang: Lang;
   onToggleLang: () => void;
   firebaseUid: string;
@@ -95,6 +127,7 @@ interface PoliceAdminPortalProps {
   officer?: PoliceOfficer;
   branding: BrandingSetting;
   jurisdictions: Jurisdiction[];
+  onRetryCloudConnect?: () => Promise<{ ok: boolean; error?: string }>;
   onLogout: () => void;
 }
 
@@ -135,6 +168,7 @@ interface PhotoMatchResult {
 }
 
 export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
+  isCloudConnected,
   lang,
   onToggleLang,
   firebaseUid,
@@ -144,6 +178,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   officer,
   branding,
   jurisdictions,
+  onRetryCloudConnect,
   onLogout,
 }) => {
   const t = DICT[lang];
@@ -279,10 +314,19 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setBrandEthiopianFlag(resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl));
   }, [branding]);
 
-  // Admin: New Jurisdiction
+  // Admin: Jurisdictions (Region, Zone, City, Woreda, Kebele) Add & Edit
+  const [jurRegion, setJurRegion] = useState(DEFAULT_REGION_NAME);
+  const [jurZone, setJurZone] = useState('');
   const [jurCity, setJurCity] = useState('');
   const [jurWoreda, setJurWoreda] = useState('');
   const [jurKebele, setJurKebele] = useState('');
+  const [jurSearch, setJurSearch] = useState('');
+  const [editingJurId, setEditingJurId] = useState<string | null>(null);
+  const [editJurRegion, setEditJurRegion] = useState('');
+  const [editJurZone, setEditJurZone] = useState('');
+  const [editJurCity, setEditJurCity] = useState('');
+  const [editJurWoreda, setEditJurWoreda] = useState('');
+  const [editJurKebele, setEditJurKebele] = useState('');
 
   // Admin: Own Username & Password Management
   const [adminCred, setAdminCred] = useState<AdminCredential | null>(null);
@@ -292,6 +336,25 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   const [admConfirmPass, setAdmConfirmPass] = useState('');
 
   useEffect(() => {
+    if (!isCloudConnected) {
+      const unsub = subscribeFallbackStore((data) => {
+        setOfficers(data.officers);
+        setLandlords(data.landlords);
+        setTenants(data.tenants);
+        setWantedPersons(data.wantedPersons);
+        setWantedAlerts(data.wantedAlerts);
+        setCriminalRecords(data.criminalRecords);
+        setHistory(data.history);
+        if (isAdmin) {
+          setAdminCred(data.adminCredential);
+          if (data.adminCredential?.username) {
+            setAdmNewUsername(data.adminCredential.username);
+          }
+        }
+      });
+      return unsub;
+    }
+
     const unsub = subscribePoliceData((data) => {
       setOfficers(data.officers);
       setLandlords(data.landlords);
@@ -302,10 +365,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       setHistory(data.history);
     });
     return unsub;
-  }, []);
+  }, [isCloudConnected, isAdmin]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || !isCloudConnected) return;
     void ensureAdminCredentialsSeeded(firebaseUid).catch((err) => {
       console.warn('Admin credentials check:', err);
     });
@@ -316,7 +379,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       }
     });
     return unsub;
-  }, [isAdmin, firebaseUid]);
+  }, [isAdmin, firebaseUid, isCloudConnected]);
 
   // Automatic Cross-Check of Wanted Persons against Tenants
   useEffect(() => {
@@ -327,11 +390,15 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       for (const ten of tenants) {
         const matchReason = checkWantedMatch(w, ten);
         if (matchReason) {
-          void createWantedAlertIfMissing(firebaseUid, wantedAlerts, w, ten, matchReason);
+          if (isCloudConnected) {
+            void createWantedAlertIfMissing(firebaseUid, wantedAlerts, w, ten, matchReason);
+          } else {
+            void createFallbackWantedAlertIfMissing(firebaseUid, w, ten, matchReason);
+          }
         }
       }
     }
-  }, [wantedPersons, tenants, wantedAlerts, firebaseUid]);
+  }, [wantedPersons, tenants, wantedAlerts, firebaseUid, isCloudConnected]);
 
   const matchesOfficerScope = (item: { city: string; woreda: string; kebele: string }) => {
     if (isAdmin || !officer || officer.jurisdictionLevel === 'regional') return true;
@@ -583,25 +650,15 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     });
   }, [dossier, history]);
 
-  async function handleImageUpload(
-    e: React.ChangeEvent<HTMLInputElement>,
-    setter: (val: string) => void,
-    preserveTransparency = false
-  ) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setErrorMsg('');
+  const [copiedDomain, setCopiedDomain] = useState('');
+
+  function handleCopyDomain(host: string) {
     try {
-      const compressed = await compressImageFile(
-        file,
-        720,
-        preserveTransparency ? 0.8 : 0.68,
-        250000,
-        preserveTransparency
-      );
-      setter(compressed);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'ምስሉን ማስገባት አልተቻለም');
+      void navigator.clipboard?.writeText(host);
+      setCopiedDomain(host);
+      window.setTimeout(() => setCopiedDomain(''), 2000);
+    } catch {
+      // Ignore clipboard failure
     }
   }
 
@@ -851,7 +908,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     }
     setBusy(true);
     try {
-      await createWantedPerson(firebaseUid, actorName, officer?.officerId, {
+      const payload = {
         fullName: wName,
         phone: wPhone,
         faydaId: wFayda,
@@ -862,7 +919,12 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         city: officer?.city || 'አሶሳ ከተማ',
         woreda: officer?.woreda || 'ወረዳ 1',
         kebele: officer?.kebele || 'ቀበሌ 01',
-      });
+      };
+      if (isCloudConnected) {
+        await createWantedPerson(firebaseUid, actorName, officer?.officerId, payload);
+      } else {
+        await createFallbackWantedPerson(firebaseUid, actorName, officer?.officerId, payload);
+      }
       setWName('');
       setWPhone('');
       setWFayda('');
@@ -883,12 +945,12 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setStatusMsg('');
     setBusy(true);
     try {
-      await createCriminalRecord(firebaseUid, actorName, officer?.officerId, {
+      const payload = {
         personName: susName,
         phone: susPhone,
         faydaId: susFayda,
         photoImage: susPhoto || undefined,
-        recordType: 'suspect',
+        recordType: 'suspect' as const,
         offenseTitle: susOffense,
         description: susDesc,
         city: susCity,
@@ -896,7 +958,12 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         kebele: susKebele,
         stationName: susStation,
         incidentDate: susDate,
-      });
+      };
+      if (isCloudConnected) {
+        await createCriminalRecord(firebaseUid, actorName, officer?.officerId, payload);
+      } else {
+        await createFallbackCriminalRecord(firebaseUid, actorName, officer?.officerId, payload);
+      }
       setSusName('');
       setSusPhone('');
       setSusFayda('');
@@ -952,21 +1019,31 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setStatusMsg('');
     setBusy(true);
     try {
+      const payload = {
+        personName: crName,
+        phone: crPhone,
+        faydaId: crFayda,
+        photoImage: crPhoto || undefined,
+        recordType: crType,
+        offenseTitle: crOffense,
+        description: crDesc,
+        city: crCity,
+        woreda: crWoreda,
+        kebele: crKebele,
+        stationName: crStation,
+        incidentDate: crDate,
+      };
       if (editingCriminalRecordId) {
-        await updateCriminalRecord(firebaseUid, actorName, editingCriminalRecordId, {
-          personName: crName,
-          phone: crPhone,
-          faydaId: crFayda,
-          photoImage: crPhoto || undefined,
-          recordType: crType,
-          offenseTitle: crOffense,
-          description: crDesc,
-          city: crCity,
-          woreda: crWoreda,
-          kebele: crKebele,
-          stationName: crStation,
-          incidentDate: crDate,
-        });
+        if (isCloudConnected) {
+          await updateCriminalRecord(firebaseUid, actorName, editingCriminalRecordId, payload);
+        } else {
+          await updateFallbackCriminalRecord(
+            firebaseUid,
+            actorName,
+            editingCriminalRecordId,
+            payload
+          );
+        }
         resetCriminalRecordForm();
         setStatusMsg(
           lang === 'am'
@@ -974,20 +1051,11 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             : 'Criminal / suspect record updated successfully.'
         );
       } else {
-        await createCriminalRecord(firebaseUid, actorName, officer?.officerId, {
-          personName: crName,
-          phone: crPhone,
-          faydaId: crFayda,
-          photoImage: crPhoto || undefined,
-          recordType: crType,
-          offenseTitle: crOffense,
-          description: crDesc,
-          city: crCity,
-          woreda: crWoreda,
-          kebele: crKebele,
-          stationName: crStation,
-          incidentDate: crDate,
-        });
+        if (isCloudConnected) {
+          await createCriminalRecord(firebaseUid, actorName, officer?.officerId, payload);
+        } else {
+          await createFallbackCriminalRecord(firebaseUid, actorName, officer?.officerId, payload);
+        }
         resetCriminalRecordForm();
         setStatusMsg('የእስር እና የወንጀል ሪከርድ መዝገብ ተቀምጧል።');
       }
@@ -1059,23 +1127,39 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       if (credTargetType === 'officer') {
         const off = officers.find((o) => o.officerId === target.id);
         if (!off) throw new Error('Officer not found');
-        await updateOfficerCredentials(firebaseUid, actorName, off, {
+        const upd = {
           newUsername: credNewUsername.trim() || off.username,
           newPassword: credNewPass || undefined,
-        });
+        };
+        if (isCloudConnected) {
+          await updateOfficerCredentials(firebaseUid, actorName, off, upd);
+        } else {
+          await updateFallbackOfficerCredentials(firebaseUid, actorName, off, upd);
+        }
       } else {
         const ll = landlords.find((l) => l.landlordId === target.id);
         if (!ll) throw new Error('Landlord not found');
-        await updateLandlordCredentials(
-          firebaseUid,
-          isAdmin ? 'admin' : 'police',
-          actorName,
-          ll,
-          {
-            newPhone: credNewUsername.trim() || ll.phone,
-            newPassword: credNewPass || undefined,
-          }
-        );
+        const upd = {
+          newPhone: credNewUsername.trim() || ll.phone,
+          newPassword: credNewPass || undefined,
+        };
+        if (isCloudConnected) {
+          await updateLandlordCredentials(
+            firebaseUid,
+            isAdmin ? 'admin' : 'police',
+            actorName,
+            ll,
+            upd
+          );
+        } else {
+          await updateFallbackLandlordCredentials(
+            firebaseUid,
+            isAdmin ? 'admin' : 'police',
+            actorName,
+            ll,
+            upd
+          );
+        }
       }
       setCredNewPass('');
       setStatusMsg(`የ ${target.name} ዩዘርኔም እና የይለፍ ቃል በተሳካ ሁኔታ ተስተካክሏል።`);
@@ -1094,13 +1178,21 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       if (credTargetType === 'officer') {
         const off = officers.find((o) => o.officerId === credSelectedId);
         if (off) {
-          await deleteOfficerAccount(firebaseUid, actorName, off);
+          if (isCloudConnected) {
+            await deleteOfficerAccount(firebaseUid, actorName, off);
+          } else {
+            await deleteFallbackOfficerAccount(firebaseUid, actorName, off);
+          }
           setStatusMsg(`የፖሊስ መለያ (${off.fullName}) ተሰርዟል።`);
         }
       } else {
         const ll = landlords.find((l) => l.landlordId === credSelectedId);
         if (ll) {
-          await deleteLandlordAccount(firebaseUid, actorName, ll);
+          if (isCloudConnected) {
+            await deleteLandlordAccount(firebaseUid, actorName, ll);
+          } else {
+            await deleteFallbackLandlordAccount(firebaseUid, actorName, ll);
+          }
           setStatusMsg(`የአከራይ መለያ (${ll.fullName}) ተሰርዟል።`);
         }
       }
@@ -1126,20 +1218,31 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setErrorMsg('');
     try {
       const assocTenants = tenants.filter((item) => item.landlordId === oldLl.landlordId);
-      await replaceLandlordOwner(
-        firebaseUid,
-        isAdmin ? 'admin' : 'police',
-        actorName,
-        oldLl,
-        {
-          fullName: repNewName,
-          phone: repNewPhone,
-          faydaId: repNewFayda,
-          idFrontImage: repNewFront,
-          idBackImage: repNewBack,
-        },
-        assocTenants
-      );
+      const ownerPayload = {
+        fullName: repNewName,
+        phone: repNewPhone,
+        faydaId: repNewFayda,
+        idFrontImage: repNewFront,
+        idBackImage: repNewBack,
+      };
+      if (isCloudConnected) {
+        await replaceLandlordOwner(
+          firebaseUid,
+          isAdmin ? 'admin' : 'police',
+          actorName,
+          oldLl,
+          ownerPayload,
+          assocTenants
+        );
+      } else {
+        await replaceFallbackLandlordOwner(
+          firebaseUid,
+          isAdmin ? 'admin' : 'police',
+          actorName,
+          oldLl,
+          ownerPayload
+        );
+      }
       setRepNewName('');
       setRepNewPhone('');
       setRepNewFayda('');
@@ -1162,7 +1265,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setBusy(true);
     setErrorMsg('');
     try {
-      await createPoliceOfficer(firebaseUid, {
+      const payload = {
         fullName: offName,
         rank: offRank,
         badgeNumber: offBadge || `BG-${Date.now().toString().slice(-4)}`,
@@ -1174,7 +1277,12 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         city: offCity,
         woreda: offLevel === 'city' || offLevel === 'regional' ? '' : offWoreda,
         kebele: offLevel === 'kebele' ? offKebele : '',
-      });
+      };
+      if (isCloudConnected) {
+        await createPoliceOfficer(firebaseUid, payload);
+      } else {
+        await createFallbackPoliceOfficer(firebaseUid, payload);
+      }
       setOffName('');
       setOffBadge('');
       setOffPhone('');
@@ -1195,11 +1303,16 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setBusy(true);
     setErrorMsg('');
     try {
-      await updateOfficerCredentials(firebaseUid, actorName, editingOfficer, {
+      const upd = {
         newUsername: editOffUsername,
         newPassword: editOffPass || undefined,
         active: editOffActive,
-      });
+      };
+      if (isCloudConnected) {
+        await updateOfficerCredentials(firebaseUid, actorName, editingOfficer, upd);
+      } else {
+        await updateFallbackOfficerCredentials(firebaseUid, actorName, editingOfficer, upd);
+      }
       setStatusMsg(`የ ${editingOfficer.fullName} ዩዘርኔም (${editOffUsername}) እና መግቢያ ተስተካክሏል።`);
       setEditingOfficer(null);
       setEditOffPass('');
@@ -1215,13 +1328,18 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setBusy(true);
     setErrorMsg('');
     try {
-      await saveBranding(firebaseUid, {
+      const payload = {
         commissionName: brandName,
         subtitle: brandSub,
         logoDataUrl: brandLogo,
         regionalFlagDataUrl: brandRegionalFlag,
         ethiopianFlagDataUrl: brandEthiopianFlag,
-      });
+      };
+      if (isCloudConnected) {
+        await saveBranding(firebaseUid, payload);
+      } else {
+        await saveFallbackBranding(firebaseUid, payload);
+      }
       setStatusMsg('የፖሊስ ኮሚሽን ሎጎ፣ የክልል እና የኢትዮጵያ ሰንደቅአላማ በመላው ሲስተሙ (የመግቢያ ገፅን ጨምሮ) ተቀይሯል።');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'ሎጎ መቀየር አልተቻለም');
@@ -1249,13 +1367,16 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
 
     setBusy(true);
     try {
-      const updated = await updateAdminCredentials({
+      const params = {
         adminUid: firebaseUid,
         actorName,
         currentPassword: admCurrentPass,
         newUsername: admNewUsername,
         newPassword: admNewPass || undefined,
-      });
+      };
+      const updated = isCloudConnected
+        ? await updateAdminCredentials(params)
+        : await updateFallbackAdminCredentials(params);
       setAdmCurrentPass('');
       setAdmNewPass('');
       setAdmConfirmPass('');
@@ -1268,6 +1389,167 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       setBusy(false);
     }
   }
+
+  async function handleAlertStatusUpdate(
+    alertId: string,
+    status: 'unread' | 'acknowledged' | 'resolved'
+  ) {
+    if (isCloudConnected) {
+      await updateAlertStatus(alertId, status);
+    } else {
+      await updateFallbackAlertStatus(alertId, status);
+    }
+  }
+
+  async function handleWantedStatusChange(
+    wantedId: string,
+    status: 'active' | 'captured' | 'closed'
+  ) {
+    if (isCloudConnected) {
+      await updateWantedStatus(wantedId, status);
+    } else {
+      await updateFallbackWantedStatus(wantedId, status);
+    }
+  }
+
+  async function handleDeleteWanted(w: WantedPerson) {
+    if (isCloudConnected) {
+      await deleteWantedPerson(firebaseUid, actorName, w);
+    } else {
+      await deleteFallbackWantedPerson(firebaseUid, actorName, w);
+    }
+  }
+
+  async function handleCriminalTypeChange(recordId: string, recordType: RecordType) {
+    if (isCloudConnected) {
+      await updateCriminalRecordType(recordId, recordType);
+    } else {
+      await updateFallbackCriminalRecordType(recordId, recordType);
+    }
+  }
+
+  async function handleDeleteCriminal(c: CriminalRecord) {
+    if (isCloudConnected) {
+      await deleteCriminalRecord(firebaseUid, actorName, c);
+    } else {
+      await deleteFallbackCriminalRecord(firebaseUid, actorName, c);
+    }
+  }
+
+  async function handleDeleteOfficer(o: PoliceOfficer) {
+    if (isCloudConnected) {
+      await deleteOfficerAccount(firebaseUid, actorName, o);
+    } else {
+      await deleteFallbackOfficerAccount(firebaseUid, actorName, o);
+    }
+  }
+
+  async function handleAddJurisdictionSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!jurCity.trim() || !jurWoreda.trim() || !jurKebele.trim()) {
+      setErrorMsg('እባክዎ ከተማ፣ ወረዳ እና ቀበሌ ይሙሉ።');
+      return;
+    }
+    setBusy(true);
+    setErrorMsg('');
+    try {
+      const payload = {
+        region: jurRegion.trim() || DEFAULT_REGION_NAME,
+        zone: jurZone.trim() || inferZoneForCity(jurCity),
+        city: jurCity.trim(),
+        woreda: jurWoreda.trim(),
+        kebele: jurKebele.trim(),
+      };
+      if (isCloudConnected) {
+        await addJurisdiction(firebaseUid, payload);
+      } else {
+        await addFallbackJurisdiction(firebaseUid, payload);
+      }
+      setJurKebele('');
+      setStatusMsg('አዲስ ክልል / ዞን / ከተማ / ወረዳ / ቀበሌ በተሳካ ሁኔታ ተጨምሯል።');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'አድራሻ መጨመር አልተቻለም');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEditJurisdiction(j: Jurisdiction) {
+    setEditingJurId(j.id);
+    setEditJurRegion(j.region || DEFAULT_REGION_NAME);
+    setEditJurZone(j.zone || inferZoneForCity(j.city));
+    setEditJurCity(j.city);
+    setEditJurWoreda(j.woreda);
+    setEditJurKebele(j.kebele);
+  }
+
+  async function handleSaveJurisdictionEdit(j: Jurisdiction) {
+    if (!editJurCity.trim() || !editJurWoreda.trim() || !editJurKebele.trim()) {
+      setErrorMsg('እባክዎ ከተማ፣ ወረዳ እና ቀበሌ ይሙሉ።');
+      return;
+    }
+    setBusy(true);
+    setErrorMsg('');
+    try {
+      const updates = {
+        region: editJurRegion.trim() || DEFAULT_REGION_NAME,
+        zone: editJurZone.trim() || inferZoneForCity(editJurCity),
+        city: editJurCity.trim(),
+        woreda: editJurWoreda.trim(),
+        kebele: editJurKebele.trim(),
+      };
+      if (isCloudConnected) {
+        if (j.createdByUid === 'seed') {
+          await seedDefaultJurisdictionsIfEmpty(firebaseUid);
+        }
+        await updateJurisdiction(j.id, updates);
+      } else {
+        await updateFallbackJurisdiction(j.id, updates);
+      }
+      setEditingJurId(null);
+      setStatusMsg('ክልል / ዞን / ከተማ / ወረዳ / ቀበሌ በተሳካ ሁኔታ ተስተካክሏል።');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'አድራሻ ማስተካከል አልተቻለም');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteJurisdictionRow(j: Jurisdiction) {
+    setBusy(true);
+    setErrorMsg('');
+    try {
+      if (isCloudConnected) {
+        if (j.createdByUid === 'seed') {
+          await seedDefaultJurisdictionsIfEmpty(firebaseUid);
+        }
+        await deleteJurisdiction(j.id);
+      } else {
+        await deleteFallbackJurisdiction(j.id);
+      }
+      if (editingJurId === j.id) {
+        setEditingJurId(null);
+      }
+      setStatusMsg('አድራሻው ተሰርዟል።');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'አድራሻ መሰረዝ አልተቻለም');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const filteredJurisdictions = useMemo(() => {
+    const q = normalizeText(jurSearch);
+    if (!q) return jurisdictions;
+    return jurisdictions.filter(
+      (j) =>
+        normalizeText(j.region || DEFAULT_REGION_NAME).includes(q) ||
+        normalizeText(j.zone || inferZoneForCity(j.city)).includes(q) ||
+        normalizeText(j.city).includes(q) ||
+        normalizeText(j.woreda).includes(q) ||
+        normalizeText(j.kebele).includes(q)
+    );
+  }, [jurisdictions, jurSearch]);
 
   const unreadAlerts = scopedAlerts.filter((a) => a.status === 'unread');
   const policeTenantsCount = scopedTenants.filter((item) => item.isPoliceTenant).length;
@@ -1455,15 +1737,56 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
           {/* Ornamental System Title Banner */}
           <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-xl px-4 py-3.5 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 no-print">
             <div>
-              <h1 className="text-lg sm:text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-amber-200 to-white">
+              <h1 className="text-lg sm:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-emerald-300">
                 {t.systemTitle}
               </h1>
-              <p className="text-xs text-amber-300 font-medium mt-0.5">
+              <p className="text-xs text-cyan-300 font-bold mt-0.5">
                 {branding.commissionName}
               </p>
             </div>
-            <p className="text-xs text-slate-300 font-semibold">{t.motto}</p>
+            <p className="text-xs text-amber-200 font-bold">{t.motto}</p>
           </section>
+
+          {!isCloudConnected && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-2 text-xs text-blue-950 no-print">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <Cloud className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">የአካባቢ ሁነታ (Fallback Mode)፦ </span>
+                    ዶሜይኑን በFirebase Console (<span className="font-mono-tabular font-semibold">{FIREBASE_PROJECT_ID}</span> → Authentication → Settings → Authorized domains) ላይ ሲያክሉ መረጃዎች በቀጥታ Firestore Cloud ላይ ይቀመጣሉ።
+                  </div>
+                </div>
+                {onRetryCloudConnect && (
+                  <button
+                    type="button"
+                    onClick={() => void onRetryCloudConnect()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold shrink-0"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    {lang === 'am' ? 'ከFirestore Cloud ጋር አገናኝ' : 'Connect Firestore Cloud'}
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {getHostnamesToAuthorize().map((host) => (
+                  <button
+                    key={host}
+                    type="button"
+                    onClick={() => handleCopyDomain(host)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-blue-200 text-[11px] font-mono-tabular text-blue-900 hover:bg-blue-100"
+                  >
+                    <span className="truncate max-w-[230px] sm:max-w-none">{host}</span>
+                    {copiedDomain === host ? (
+                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                    ) : (
+                      <Copy className="w-3 h-3 text-blue-600 shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {isAdmin && adminCred?.isDefaultPassword && (
             <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
@@ -1511,14 +1834,14 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
-                        onClick={() => void updateAlertStatus(alert.alertId, 'acknowledged')}
+                        onClick={() => void handleAlertStatusUpdate(alert.alertId, 'acknowledged')}
                         className="px-3 py-1.5 bg-red-700 text-white rounded-md font-medium hover:bg-red-800"
                       >
                         ተቀብያለሁ
                       </button>
                       <button
                         type="button"
-                        onClick={() => void updateAlertStatus(alert.alertId, 'resolved')}
+                        onClick={() => void handleAlertStatusUpdate(alert.alertId, 'resolved')}
                         className="px-3 py-1.5 bg-slate-100 text-slate-800 rounded-md font-medium hover:bg-slate-200"
                       >
                         ተጠናቋል
@@ -2226,22 +2549,15 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                 </div>
                 <p className="text-xs text-slate-500">{t.photoSearchDesc}</p>
 
-                <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 rounded-lg p-4 cursor-pointer hover:bg-slate-50">
-                  {photoQueryImg ? (
-                    <img src={photoQueryImg} alt="Query" className="h-36 object-contain rounded" />
-                  ) : (
-                    <div className="py-6 text-center text-xs text-slate-600">
-                      <ImagePlus className="w-6 h-6 mx-auto mb-1 text-slate-400" />
-                      <span>{t.photoSearchBtn}</span>
-                    </div>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => void handleImageUpload(e, setPhotoQueryImg)}
-                  />
-                </label>
+                <SmartPhotoInput
+                  value={photoQueryImg}
+                  onChange={setPhotoQueryImg}
+                  cropMode="portrait"
+                  cameraFacing="environment"
+                  theme="light"
+                  lang={lang}
+                  previewAlt="Query"
+                />
 
                 <button
                   type="button"
@@ -2336,37 +2652,30 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div className="space-y-3">
                   <select
                     value={wPriority}
                     onChange={(e) =>
                       setWPriority(e.target.value as 'critical' | 'high' | 'medium')
                     }
-                    className="px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white"
                   >
                     <option value="critical">አስቸኳይ / Critical</option>
                     <option value="high">ከፍተኛ / High</option>
                     <option value="medium">መካከለኛ / Medium</option>
                   </select>
 
-                  <label className="px-3 py-2.5 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
-                    {wPhoto ? 'ፎቶ ተጭኗል (ቀይር)' : 'ፎቶ ጫን'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => void handleImageUpload(e, setWPhoto)}
-                    />
-                  </label>
-                </div>
-
-                {sanitizeImageSrc(wPhoto) && (
-                  <img
-                    src={sanitizeImageSrc(wPhoto)}
-                    alt="Wanted Preview"
-                    className="h-32 w-full object-contain border border-slate-200 rounded-lg"
+                  <SmartPhotoInput
+                    label={lang === 'am' ? 'የተፈላጊ ፎቶ' : 'Wanted Photo'}
+                    value={wPhoto}
+                    onChange={setWPhoto}
+                    cropMode="portrait"
+                    cameraFacing="environment"
+                    theme="light"
+                    lang={lang}
+                    previewAlt="Wanted Preview"
                   />
-                )}
+                </div>
 
                 <textarea
                   required
@@ -2443,7 +2752,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => void updateWantedStatus(w.wantedId, 'captured')}
+                              onClick={() => void handleWantedStatusChange(w.wantedId, 'captured')}
                               className={`text-xs px-2.5 py-1 rounded font-medium ${
                                 w.status === 'captured'
                                   ? 'bg-emerald-700 text-white'
@@ -2454,7 +2763,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => void updateWantedStatus(w.wantedId, 'active')}
+                              onClick={() => void handleWantedStatusChange(w.wantedId, 'active')}
                               className={`text-xs px-2.5 py-1 rounded font-medium ${
                                 w.status === 'active'
                                   ? 'bg-red-700 text-white'
@@ -2485,7 +2794,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                             {isAdmin && (
                               <button
                                 type="button"
-                                onClick={() => void deleteWantedPerson(firebaseUid, actorName, w)}
+                                onClick={() => void handleDeleteWanted(w)}
                                 className="text-xs text-red-600 hover:text-red-800"
                                 title={t.deleteRecordBtn}
                               >
@@ -2540,22 +2849,23 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div className="space-y-3">
                   <input
                     type="date"
                     value={susDate}
                     onChange={(e) => setSusDate(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm tabular-nums"
                   />
-                  <label className="px-3 py-2.5 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
-                    {susPhoto ? 'ፎቶ ተጭኗል' : 'የተጠርጣሪ ፎቶ ጫን'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => void handleImageUpload(e, setSusPhoto)}
-                    />
-                  </label>
+                  <SmartPhotoInput
+                    label={lang === 'am' ? 'የተጠርጣሪ ፎቶ' : 'Suspect Photo'}
+                    value={susPhoto}
+                    onChange={setSusPhoto}
+                    cropMode="portrait"
+                    cameraFacing="environment"
+                    theme="light"
+                    lang={lang}
+                    previewAlt="Suspect Preview"
+                  />
                 </div>
 
                 <input
@@ -2665,14 +2975,14 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                           <div className="flex flex-wrap items-center gap-2 mt-2.5">
                             <button
                               type="button"
-                              onClick={() => void updateCriminalRecordType(c.recordId, 'arrested')}
+                              onClick={() => void handleCriminalTypeChange(c.recordId, 'arrested')}
                               className="px-2.5 py-1 bg-red-700 hover:bg-red-800 text-white text-xs font-medium rounded"
                             >
                               {t.promoteToArrested}
                             </button>
                             <button
                               type="button"
-                              onClick={() => void updateCriminalRecordType(c.recordId, 'released')}
+                              onClick={() => void handleCriminalTypeChange(c.recordId, 'released')}
                               className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded"
                             >
                               {t.markReleased}
@@ -2696,7 +3006,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                             {isAdmin && (
                               <button
                                 type="button"
-                                onClick={() => void deleteCriminalRecord(firebaseUid, actorName, c)}
+                                onClick={() => void handleDeleteCriminal(c)}
                                 className="px-2 py-1 text-red-600 hover:text-red-800 text-xs"
                               >
                                 {t.deleteRecordBtn}
@@ -2930,33 +3240,26 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                  <div className="space-y-3">
                     <input
                       type="text"
                       required
                       value={crStation}
                       onChange={(e) => setCrStation(e.target.value)}
                       placeholder="ፖሊስ ጣቢያ"
-                      className="px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
                     />
-                    <label className="px-3 py-2.5 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer hover:bg-slate-50">
-                      {crPhoto ? 'ፎቶ ተጭኗል (ቀይር)' : 'ፎቶ ጫን'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => void handleImageUpload(e, setCrPhoto)}
-                      />
-                    </label>
+                    <SmartPhotoInput
+                      label={lang === 'am' ? 'የግለሰቡ ፎቶ' : 'Record Photo'}
+                      value={crPhoto}
+                      onChange={setCrPhoto}
+                      cropMode="portrait"
+                      cameraFacing="environment"
+                      theme="light"
+                      lang={lang}
+                      previewAlt="Record Preview"
+                    />
                   </div>
-
-                  {crPhoto && (
-                    <img
-                      src={crPhoto}
-                      alt="Record Preview"
-                      className="h-28 w-full object-contain border border-slate-200 rounded-lg bg-slate-50"
-                    />
-                  )}
 
                   <div className="flex gap-2">
                     <button
@@ -3015,25 +3318,21 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       </select>
                     </div>
 
-                    {/* Photograph Search inside Criminal Records */}
-                    <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-slate-100">
-                      <label className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg text-xs font-medium text-slate-700 cursor-pointer hover:bg-slate-50">
-                        <Camera className="w-3.5 h-3.5" />
-                        <span>{crPhotoQueryImg ? 'ፎቶ ተመርጧል (ቀይር)' : t.crPhotoSearchBtn}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => void handleImageUpload(e, setCrPhotoQueryImg)}
-                        />
-                      </label>
+                    {/* Photograph Search inside Criminal Records (Camera + Gallery + Auto-Crop) */}
+                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                      <SmartPhotoInput
+                        label={t.crPhotoSearchBtn}
+                        value={crPhotoQueryImg}
+                        onChange={setCrPhotoQueryImg}
+                        cropMode="portrait"
+                        cameraFacing="environment"
+                        theme="light"
+                        lang={lang}
+                        compact
+                        previewAlt="Search query"
+                      />
                       {crPhotoQueryImg && (
-                        <>
-                          <img
-                            src={crPhotoQueryImg}
-                            alt="Search query"
-                            className="w-9 h-9 rounded object-cover border border-slate-200"
-                          />
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             disabled={crPhotoSearching}
@@ -3052,7 +3351,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                           >
                             {t.closeBtn}
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
 
@@ -3161,7 +3460,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                   {c.recordType !== 'suspect' && (
                                     <button
                                       type="button"
-                                      onClick={() => void updateCriminalRecordType(c.recordId, 'suspect')}
+                                      onClick={() => void handleCriminalTypeChange(c.recordId, 'suspect')}
                                       className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-semibold rounded"
                                     >
                                       {lang === 'am' ? 'ተጠርጣሪ በል' : 'Tag Suspect'}
@@ -3170,7 +3469,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                   {c.recordType !== 'arrested' && (
                                     <button
                                       type="button"
-                                      onClick={() => void updateCriminalRecordType(c.recordId, 'arrested')}
+                                      onClick={() => void handleCriminalTypeChange(c.recordId, 'arrested')}
                                       className="px-2.5 py-1 bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded"
                                     >
                                       {t.promoteToArrested}
@@ -3179,7 +3478,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                   {c.recordType !== 'released' && (
                                     <button
                                       type="button"
-                                      onClick={() => void updateCriminalRecordType(c.recordId, 'released')}
+                                      onClick={() => void handleCriminalTypeChange(c.recordId, 'released')}
                                       className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded"
                                     >
                                       {t.markReleased}
@@ -3212,7 +3511,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                   {isAdmin && (
                                     <button
                                       type="button"
-                                      onClick={() => void deleteCriminalRecord(firebaseUid, actorName, c)}
+                                      onClick={() => void handleDeleteCriminal(c)}
                                       className="px-2.5 py-1 bg-red-50 text-red-700 hover:bg-red-100 text-xs rounded"
                                     >
                                       {t.deleteRecordBtn}
@@ -3487,24 +3786,26 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="p-3 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer">
-                    {repNewFront ? 'የፊት መታወቂያ ተጭኗል' : 'የአዲስ አከራይ ፊት መታወቂያ *'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => void handleImageUpload(e, setRepNewFront)}
-                    />
-                  </label>
-                  <label className="p-3 border border-dashed border-slate-300 rounded-lg text-xs text-center cursor-pointer">
-                    {repNewBack ? 'የኋላ መታወቂያ ተጭኗል' : 'የአዲስ አከራይ ኋላ መታወቂያ *'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => void handleImageUpload(e, setRepNewBack)}
-                    />
-                  </label>
+                  <SmartPhotoInput
+                    label="የአዲስ አከራይ ፊት መታወቂያ *"
+                    value={repNewFront}
+                    onChange={setRepNewFront}
+                    cropMode="id_card"
+                    cameraFacing="environment"
+                    theme="light"
+                    lang={lang}
+                    previewAlt="New Landlord Front ID"
+                  />
+                  <SmartPhotoInput
+                    label="የአዲስ አከራይ ኋላ መታወቂያ *"
+                    value={repNewBack}
+                    onChange={setRepNewBack}
+                    cropMode="id_card"
+                    cameraFacing="environment"
+                    theme="light"
+                    lang={lang}
+                    previewAlt="New Landlord Back ID"
+                  />
                 </div>
 
                 <button
@@ -3751,21 +4052,28 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    <BrandingImage
-                      src={brandLogo}
-                      alt="Preview Logo"
-                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border border-slate-200 shrink-0"
-                    />
-                    <label className="px-4 py-2.5 min-h-[40px] inline-flex items-center bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg cursor-pointer">
-                      አዲስ የፖሊስ ሎጎ ጫን
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => void handleImageUpload(e, setBrandLogo)}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <BrandingImage
+                        src={brandLogo}
+                        alt="Preview Logo"
+                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border border-slate-200 shrink-0"
                       />
-                    </label>
+                      <div className="flex-1 min-w-0">
+                        <SmartPhotoInput
+                          label="አዲስ የፖሊስ ሎጎ ጫን"
+                          value={brandLogo}
+                          onChange={setBrandLogo}
+                          cropMode="free"
+                          cameraFacing="environment"
+                          theme="light"
+                          lang={lang}
+                          compact
+                          hidePreview
+                          maxChars={380000}
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Admin Uploadable Flags for Login Page Left & Right Mountain Peaks */}
@@ -3780,15 +4088,20 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                           alt="Benishangul-Gumuz Regional Flag"
                           className="w-16 h-11 rounded object-contain border border-slate-300 shrink-0"
                         />
-                        <label className="px-2.5 py-2 min-h-[36px] inline-flex items-center bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-medium rounded-lg cursor-pointer">
-                          ሰንደቅአላማ ጫን
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => void handleImageUpload(e, setBrandRegionalFlag, true)}
+                        <div className="flex-1 min-w-0">
+                          <SmartPhotoInput
+                            value={brandRegionalFlag}
+                            onChange={setBrandRegionalFlag}
+                            cropMode="free"
+                            preserveTransparency
+                            cameraFacing="environment"
+                            theme="light"
+                            lang={lang}
+                            compact
+                            hidePreview
+                            maxChars={380000}
                           />
-                        </label>
+                        </div>
                       </div>
                     </div>
 
@@ -3802,15 +4115,20 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                           alt="Ethiopian National Flag"
                           className="w-16 h-11 rounded object-contain border border-slate-300 shrink-0"
                         />
-                        <label className="px-2.5 py-2 min-h-[36px] inline-flex items-center bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-medium rounded-lg cursor-pointer">
-                          ሰንደቅአላማ ጫን
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => void handleImageUpload(e, setBrandEthiopianFlag, true)}
+                        <div className="flex-1 min-w-0">
+                          <SmartPhotoInput
+                            value={brandEthiopianFlag}
+                            onChange={setBrandEthiopianFlag}
+                            cropMode="free"
+                            preserveTransparency
+                            cameraFacing="environment"
+                            theme="light"
+                            lang={lang}
+                            compact
+                            hidePreview
+                            maxChars={380000}
                           />
-                        </label>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3841,30 +4159,42 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                 </form>
               </div>
 
-              {/* Add Jurisdiction + Officers Directory with Edit Username/Password & Delete */}
+              {/* Full 5-Level Jurisdiction Management: Add, Edit & Delete Region / Zone / City / Woreda / Kebele */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!jurCity.trim() || !jurWoreda.trim() || !jurKebele.trim()) return;
-                    setBusy(true);
-                    try {
-                      await addJurisdiction(firebaseUid, jurCity, jurWoreda, jurKebele);
-                      setJurKebele('');
-                      setStatusMsg('አዲስ ከተማ/ወረዳ/ቀበሌ ተጨምሯል።');
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
+                  onSubmit={(e) => void handleAddJurisdictionSubmit(e)}
                   className="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-5 space-y-3 self-start"
                 >
-                  <h3 className="text-sm font-bold text-slate-900">አዲስ ከተማ / ወረዳ / ቀበሌ ጨምር</h3>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      አዲስ ክልል / ዞን / ከተማ / ወረዳ / ቀበሌ ጨምር
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      አከራዮች ሲመዘገቡና አድራሻ ሲቀይሩ የሚመርጧቸው አድራሻዎች እዚህ ይጨመራሉ።
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={jurRegion}
+                    onChange={(e) => setJurRegion(e.target.value)}
+                    placeholder="ክልል (ምሳሌ፡ ቤኒሻንጉል ጉሙዝ ክልል) *"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                  <input
+                    type="text"
+                    required
+                    value={jurZone}
+                    onChange={(e) => setJurZone(e.target.value)}
+                    placeholder="ዞን (ምሳሌ፡ አሶሳ ዞን / መተከል ዞን / ካማሺ ዞን) *"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
                   <input
                     type="text"
                     required
                     value={jurCity}
                     onChange={(e) => setJurCity(e.target.value)}
-                    placeholder="ከተማ (ምሳሌ፡ አሶሳ ከተማ)"
+                    placeholder="ከተማ (ምሳሌ፡ አሶሳ ከተማ) *"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
                   <input
@@ -3872,7 +4202,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     required
                     value={jurWoreda}
                     onChange={(e) => setJurWoreda(e.target.value)}
-                    placeholder="ወረዳ (ምሳሌ፡ ወረዳ 3)"
+                    placeholder="ወረዳ (ምሳሌ፡ ወረዳ 3) *"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
                   <input
@@ -3880,184 +4210,312 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     required
                     value={jurKebele}
                     onChange={(e) => setJurKebele(e.target.value)}
-                    placeholder="ቀበሌ (ምሳሌ፡ ቀበሌ 09)"
+                    placeholder="ቀበሌ (ምሳሌ፡ ቀበሌ 09) *"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
                   <button
                     type="submit"
                     disabled={busy}
-                    className="w-full py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg"
+                    className="w-full py-2.5 min-h-[42px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg"
                   >
                     አድራሻ ጨምር
                   </button>
                 </form>
 
                 <div className="lg:col-span-8 bg-white border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-slate-200">
-                    <h3 className="text-sm font-bold text-slate-900">
-                      የተከፈቱ የፖሊስ መለያዎች ({officers.length})
-                    </h3>
+                  <div className="px-5 py-3.5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        የተመዘገቡ ክልል፣ ዞን፣ ከተማ፣ ወረዳና ቀበሌዎች ({filteredJurisdictions.length})
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        ማንኛውንም አድራሻ ማስተካከል (Edit) ወይም መሰረዝ ይችላሉ።
+                      </p>
+                    </div>
+                    <div className="relative w-full sm:w-64">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={jurSearch}
+                        onChange={(e) => setJurSearch(e.target.value)}
+                        placeholder="በክልል፣ ዞን፣ ከተማ፣ ወረዳ ፈልግ..."
+                        className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs"
+                      />
+                    </div>
                   </div>
 
-                  {editingOfficer && (
-                    <form
-                      onSubmit={handleSaveInlineOfficerEdit}
-                      className="p-4 bg-amber-50 border-b border-amber-200 grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-end"
-                    >
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          ዩዘርኔም ({editingOfficer.fullName})
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={editOffUsername}
-                          onChange={(e) => setEditOffUsername(e.target.value)}
-                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs font-mono-tabular bg-white"
-                        />
+                  <div className="divide-y divide-slate-200 max-h-[420px] overflow-y-auto">
+                    {filteredJurisdictions.length === 0 ? (
+                      <p className="p-6 text-center text-xs text-slate-500">
+                        ምንም የተገኘ አድራሻ የለም።
+                      </p>
+                    ) : (
+                      filteredJurisdictions.map((j) => {
+                        const isEditingRow = editingJurId === j.id;
+                        return (
+                          <div key={j.id} className="p-3.5 text-xs">
+                            {isEditingRow ? (
+                              <div className="space-y-2.5 bg-amber-50/70 border border-amber-200 rounded-lg p-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
+                                  <input
+                                    type="text"
+                                    value={editJurRegion}
+                                    onChange={(e) => setEditJurRegion(e.target.value)}
+                                    placeholder="ክልል"
+                                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={editJurZone}
+                                    onChange={(e) => setEditJurZone(e.target.value)}
+                                    placeholder="ዞን"
+                                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={editJurCity}
+                                    onChange={(e) => setEditJurCity(e.target.value)}
+                                    placeholder="ከተማ"
+                                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={editJurWoreda}
+                                    onChange={(e) => setEditJurWoreda(e.target.value)}
+                                    placeholder="ወረዳ"
+                                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={editJurKebele}
+                                    onChange={(e) => setEditJurKebele(e.target.value)}
+                                    placeholder="ቀበሌ"
+                                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"
+                                  />
+                                </div>
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => void handleSaveJurisdictionEdit(j)}
+                                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-md"
+                                  >
+                                    አስቀምጥ
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingJurId(null)}
+                                    className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs rounded-md"
+                                  >
+                                    ዝጋ
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                <div className="space-y-0.5 min-w-0">
+                                  <p className="font-bold text-slate-900">
+                                    {j.city} · {j.woreda} · {j.kebele}
+                                  </p>
+                                  <p className="text-slate-500">
+                                    {j.region || DEFAULT_REGION_NAME} / {j.zone || inferZoneForCity(j.city)}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditJurisdiction(j)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md font-semibold"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                    አስተካክል
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => void handleDeleteJurisdictionRow(j)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-md font-semibold"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    ሰርዝ
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Officers Directory with Edit Username/Password & Delete */}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-200">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    የተከፈቱ የፖሊስ መለያዎች ({officers.length})
+                  </h3>
+                </div>
+
+                {editingOfficer && (
+                  <form
+                    onSubmit={handleSaveInlineOfficerEdit}
+                    className="p-4 bg-amber-50 border-b border-amber-200 grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-end"
+                  >
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        ዩዘርኔም ({editingOfficer.fullName})
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={editOffUsername}
+                        onChange={(e) => setEditOffUsername(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs font-mono-tabular bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        አዲስ ፓስዎርድ (አማራጭ)
+                      </label>
+                      <input
+                        type="password"
+                        value={editOffPass}
+                        onChange={(e) => setEditOffPass(e.target.value)}
+                        placeholder="ካልቀየሩ ባዶ"
+                        className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        ሁኔታ
+                      </label>
+                      <select
+                        value={editOffActive ? 'active' : 'suspended'}
+                        onChange={(e) => setEditOffActive(e.target.value === 'active')}
+                        className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white"
+                      >
+                        <option value="active">ንቁ (Active)</option>
+                        <option value="suspended">የታገደ (Suspended)</option>
+                      </select>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="submit"
+                        disabled={busy}
+                        className="px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded"
+                      >
+                        አስቀምጥ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingOfficer(null)}
+                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs rounded"
+                      >
+                        ዝጋ
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Mobile Officers Cards */}
+                <div className="md:hidden divide-y divide-slate-200">
+                  {officers.map((o) => (
+                    <div key={o.officerId} className="p-4 space-y-2 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-slate-900 text-sm">
+                            {o.rank} {o.fullName}
+                            {!o.active && <span className="ml-1.5 text-red-600">(ታግዷል)</span>}
+                          </p>
+                          <p className="font-mono-tabular text-slate-600">{o.username}</p>
+                        </div>
+                        <span className="tabular-nums text-slate-500">{o.phone}</span>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          አዲስ ፓስዎርድ (አማራጭ)
-                        </label>
-                        <input
-                          type="password"
-                          value={editOffPass}
-                          onChange={(e) => setEditOffPass(e.target.value)}
-                          placeholder="ካልቀየሩ ባዶ"
-                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          ሁኔታ
-                        </label>
-                        <select
-                          value={editOffActive ? 'active' : 'suspended'}
-                          onChange={(e) => setEditOffActive(e.target.value === 'active')}
-                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white"
-                        >
-                          <option value="active">ንቁ (Active)</option>
-                          <option value="suspended">የታገደ (Suspended)</option>
-                        </select>
-                      </div>
-                      <div className="flex gap-1.5">
+                      <p className="text-slate-600">
+                        {o.jurisdictionLevel} · {o.city} {o.woreda} {o.kebele}
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
                         <button
-                          type="submit"
-                          disabled={busy}
-                          className="px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded"
+                          type="button"
+                          onClick={() => {
+                            setEditingOfficer(o);
+                            setEditOffUsername(o.username);
+                            setEditOffPass('');
+                            setEditOffActive(o.active);
+                          }}
+                          className="flex-1 py-2 px-3 min-h-[36px] inline-flex items-center justify-center gap-1 bg-blue-50 text-blue-700 rounded-lg font-semibold"
                         >
-                          አስቀምጥ
+                          <Edit3 className="w-3 h-3" />
+                          አስተካክል
                         </button>
                         <button
                           type="button"
-                          onClick={() => setEditingOfficer(null)}
-                          className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs rounded"
+                          onClick={() => void handleDeleteOfficer(o)}
+                          className="flex-1 py-2 px-3 min-h-[36px] inline-flex items-center justify-center gap-1 bg-red-50 text-red-700 rounded-lg font-semibold"
                         >
-                          ዝጋ
+                          <Trash2 className="w-3 h-3" />
+                          ሰርዝ
                         </button>
                       </div>
-                    </form>
-                  )}
+                    </div>
+                  ))}
+                </div>
 
-                  {/* Mobile Officers Cards */}
-                  <div className="md:hidden divide-y divide-slate-200">
-                    {officers.map((o) => (
-                      <div key={o.officerId} className="p-4 space-y-2 text-xs">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-bold text-slate-900 text-sm">
-                              {o.rank} {o.fullName}
-                              {!o.active && <span className="ml-1.5 text-red-600">(ታግዷል)</span>}
-                            </p>
-                            <p className="font-mono-tabular text-slate-600">{o.username}</p>
-                          </div>
-                          <span className="tabular-nums text-slate-500">{o.phone}</span>
-                        </div>
-                        <p className="text-slate-600">
-                          {o.jurisdictionLevel} · {o.city} {o.woreda} {o.kebele}
-                        </p>
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingOfficer(o);
-                              setEditOffUsername(o.username);
-                              setEditOffPass('');
-                              setEditOffActive(o.active);
-                            }}
-                            className="flex-1 py-2 px-3 min-h-[36px] inline-flex items-center justify-center gap-1 bg-blue-50 text-blue-700 rounded-lg font-semibold"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                            አስተካክል
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void deleteOfficerAccount(firebaseUid, actorName, o)}
-                            className="flex-1 py-2 px-3 min-h-[36px] inline-flex items-center justify-center gap-1 bg-red-50 text-red-700 rounded-lg font-semibold"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            ሰርዝ
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Desktop Officers Table */}
-                  <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                          <th className="py-2.5 px-4">ኦፊሰር</th>
-                          <th className="py-2.5 px-4">ዩዘርኔም</th>
-                          <th className="py-2.5 px-4">ደረጃ እና አድራሻ</th>
-                          <th className="py-2.5 px-4">ስልክ</th>
-                          <th className="py-2.5 px-4 text-right">እርምጃ</th>
+                {/* Desktop Officers Table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                        <th className="py-2.5 px-4">ኦፊሰር</th>
+                        <th className="py-2.5 px-4">ዩዘርኔም</th>
+                        <th className="py-2.5 px-4">ደረጃ እና አድራሻ</th>
+                        <th className="py-2.5 px-4">ስልክ</th>
+                        <th className="py-2.5 px-4 text-right">እርምጃ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {officers.map((o) => (
+                        <tr key={o.officerId}>
+                          <td className="py-2.5 px-4 font-semibold text-slate-900">
+                            {o.rank} {o.fullName}
+                            {!o.active && (
+                              <span className="ml-1.5 text-red-600">(ታግዷል)</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-4 font-mono-tabular">{o.username}</td>
+                          <td className="py-2.5 px-4 text-slate-600">
+                            {o.jurisdictionLevel} · {o.city} {o.woreda} {o.kebele}
+                          </td>
+                          <td className="py-2.5 px-4 tabular-nums">{o.phone}</td>
+                          <td className="py-2.5 px-4 text-right space-x-2 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingOfficer(o);
+                                setEditOffUsername(o.username);
+                                setEditOffPass('');
+                                setEditOffActive(o.active);
+                              }}
+                              className="inline-flex items-center gap-1 text-blue-700 hover:underline font-medium"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              አስተካክል
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteOfficer(o)}
+                              className="inline-flex items-center gap-1 text-red-600 hover:underline font-medium"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              ሰርዝ
+                            </button>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {officers.map((o) => (
-                          <tr key={o.officerId}>
-                            <td className="py-2.5 px-4 font-semibold text-slate-900">
-                              {o.rank} {o.fullName}
-                              {!o.active && (
-                                <span className="ml-1.5 text-red-600">(ታግዷል)</span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-4 font-mono-tabular">{o.username}</td>
-                            <td className="py-2.5 px-4 text-slate-600">
-                              {o.jurisdictionLevel} · {o.city} {o.woreda} {o.kebele}
-                            </td>
-                            <td className="py-2.5 px-4 tabular-nums">{o.phone}</td>
-                            <td className="py-2.5 px-4 text-right space-x-2 whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingOfficer(o);
-                                  setEditOffUsername(o.username);
-                                  setEditOffPass('');
-                                  setEditOffActive(o.active);
-                                }}
-                                className="inline-flex items-center gap-1 text-blue-700 hover:underline font-medium"
-                              >
-                                <Edit3 className="w-3 h-3" />
-                                አስተካክል
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void deleteOfficerAccount(firebaseUid, actorName, o)}
-                                className="inline-flex items-center gap-1 text-red-600 hover:underline font-medium"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                                ሰርዝ
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

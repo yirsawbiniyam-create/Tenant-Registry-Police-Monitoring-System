@@ -1,8 +1,26 @@
 export interface StaticJurisdictionSeed {
   id: string;
+  region: string;
+  zone: string;
   city: string;
   woreda: string;
   kebele: string;
+}
+
+export const DEFAULT_REGION_NAME = 'ቤኒሻንጉል ጉሙዝ ክልል';
+
+export function inferZoneForCity(city: string): string {
+  const c = (city || '').trim();
+  if (c.includes('ግልገል') || c.includes('መተከል') || c.includes('ፓዌ') || c.includes('ቻግኒ')) {
+    return 'መተከል ዞን';
+  }
+  if (c.includes('ካማሺ')) {
+    return 'ካማሺ ዞን';
+  }
+  if (c.includes('ማኦ') || c.includes('ኮሞ')) {
+    return 'ማኦ ኮሞ ልዩ ወረዳ';
+  }
+  return 'አሶሳ ዞን';
 }
 
 export const DEFAULT_LOGO_PATH = '/src/assets/images/bg_police_logo_1795171832571.jpg';
@@ -28,20 +46,20 @@ export const DEFAULT_COMMISSION_NAME = 'የቤኒሻንጉል ጉሙዝ ክል�
 export const DEFAULT_COMMISSION_SUBTITLE = 'የአከራይ ተከራይ መመዝገቢያና የወንጀል መከላከያ ክትትል ሲስተም';
 
 export const DEFAULT_JURISDICTIONS: StaticJurisdictionSeed[] = [
-  { id: 'jur_assosa_w1_k01', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 01' },
-  { id: 'jur_assosa_w1_k02', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 02' },
-  { id: 'jur_assosa_w1_k03', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 03' },
-  { id: 'jur_assosa_w1_k04', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 04' },
-  { id: 'jur_assosa_w2_k05', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 2', kebele: 'ቀበሌ 05' },
-  { id: 'jur_assosa_w2_k06', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 2', kebele: 'ቀበሌ 06' },
-  { id: 'jur_assosa_w2_k07', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 2', kebele: 'ቀበሌ 07' },
-  { id: 'jur_assosa_w2_k08', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 2', kebele: 'ቀበሌ 08' },
-  { id: 'jur_bambasi_w1_k01', city: 'ባምባሲ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 01' },
-  { id: 'jur_bambasi_w1_k02', city: 'ባምባሲ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 02' },
-  { id: 'jur_gilgel_w1_k01', city: 'ግልገል በለስ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 01' },
-  { id: 'jur_gilgel_w1_k02', city: 'ግልገል በለስ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 02' },
-  { id: 'jur_kamashi_w1_k01', city: 'ካማሺ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 01' },
-  { id: 'jur_kamashi_w1_k02', city: 'ካማሺ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 02' },
+  { id: 'jur_assosa_w1_k01', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 01' },
+  { id: 'jur_assosa_w1_k02', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 02' },
+  { id: 'jur_assosa_w1_k03', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 03' },
+  { id: 'jur_assosa_w1_k04', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 04' },
+  { id: 'jur_assosa_w2_k05', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 2', kebele: 'ቀበሌ 05' },
+  { id: 'jur_assosa_w2_k06', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 2', kebele: 'ቀበሌ 06' },
+  { id: 'jur_assosa_w2_k07', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 2', kebele: 'ቀበሌ 07' },
+  { id: 'jur_assosa_w2_k08', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'አሶሳ ከተማ', woreda: 'ወረዳ 2', kebele: 'ቀበሌ 08' },
+  { id: 'jur_bambasi_w1_k01', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'ባምባሲ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 01' },
+  { id: 'jur_bambasi_w1_k02', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'አሶሳ ዞን', city: 'ባምባሲ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 02' },
+  { id: 'jur_gilgel_w1_k01', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'መተከል ዞን', city: 'ግልገል በለስ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 01' },
+  { id: 'jur_gilgel_w1_k02', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'መተከል ዞን', city: 'ግልገል በለስ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 02' },
+  { id: 'jur_kamashi_w1_k01', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'ካማሺ ዞን', city: 'ካማሺ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 01' },
+  { id: 'jur_kamashi_w1_k02', region: 'ቤኒሻንጉል ጉሙዝ ክልል', zone: 'ካማሺ ዞን', city: 'ካማሺ ከተማ', woreda: 'ወረዳ 1', kebele: 'ቀበሌ 02' },
 ];
 
 export const OCCUPATION_OPTIONS = [

@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2,
+  Check,
   CheckCircle2,
+  Cloud,
+  Copy,
   Eye,
   Globe,
   History,
@@ -11,7 +14,6 @@ import {
   Plus,
   RefreshCw,
   Send,
-  Upload,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -23,13 +25,13 @@ import type {
   Tenant,
 } from '../types';
 import {
-  compressImageFile,
   formatDateAm,
   sanitizeImageSrc,
   toJsDate,
   verifyPassword,
 } from '../utils/crypto';
-import { OCCUPATION_OPTIONS } from '../utils/seedData';
+import { FIREBASE_PROJECT_ID, getHostnamesToAuthorize } from '../utils/domainConfig';
+import { DEFAULT_REGION_NAME, OCCUPATION_OPTIONS, inferZoneForCity } from '../utils/seedData';
 import {
   markTenantMovedOut,
   registerLandlord,
@@ -37,28 +39,40 @@ import {
   subscribeLandlordOwnData,
   updateLandlordAddress,
 } from '../services/firestoreService';
+import {
+  markFallbackTenantMovedOut,
+  registerFallbackLandlord,
+  registerFallbackTenant,
+  subscribeFallbackStore,
+  updateFallbackLandlordAddress,
+} from '../utils/localFallback';
 import { BrandingImage } from './BrandingImage';
+import { SmartPhotoInput } from './SmartPhotoInput';
 import { DICT, type Lang } from '../i18n';
 
 interface LandlordPortalProps {
+  isCloudConnected: boolean;
   lang: Lang;
   onToggleLang: () => void;
   firebaseUid: string;
   initialLandlord: Landlord;
   branding: BrandingSetting;
   jurisdictions: Jurisdiction[];
+  onRetryCloudConnect?: () => Promise<{ ok: boolean; error?: string }>;
   onLogout: () => void;
 }
 
 type LandlordTab = 'register_tenant' | 'my_tenants' | 'change_address' | 'history';
 
 export const LandlordPortal: React.FC<LandlordPortalProps> = ({
+  isCloudConnected,
   lang,
   onToggleLang,
   firebaseUid,
   initialLandlord,
   branding,
   jurisdictions,
+  onRetryCloudConnect,
   onLogout,
 }) => {
   const t = DICT[lang];
@@ -103,7 +117,13 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Address Change State
+  // Address Change State (5-Level Region -> Zone -> City -> Woreda -> Kebele)
+  const [addrRegion, setAddrRegion] = useState(
+    initialLandlord.region || DEFAULT_REGION_NAME
+  );
+  const [addrZone, setAddrZone] = useState(
+    initialLandlord.zone || inferZoneForCity(initialLandlord.city)
+  );
   const [addrCity, setAddrCity] = useState(initialLandlord.city);
   const [addrWoreda, setAddrWoreda] = useState(initialLandlord.woreda);
   const [addrKebele, setAddrKebele] = useState(initialLandlord.kebele);
@@ -112,6 +132,12 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
   const [addrPhone, setAddrPhone] = useState(initialLandlord.phone);
 
   // Add Additional Rental House State
+  const [newPropRegion, setNewPropRegion] = useState(
+    initialLandlord.region || DEFAULT_REGION_NAME
+  );
+  const [newPropZone, setNewPropZone] = useState(
+    initialLandlord.zone || inferZoneForCity(initialLandlord.city)
+  );
   const [newPropCity, setNewPropCity] = useState(initialLandlord.city);
   const [newPropWoreda, setNewPropWoreda] = useState(initialLandlord.woreda);
   const [newPropKebele, setNewPropKebele] = useState(initialLandlord.kebele);
@@ -122,6 +148,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
   const isPoliceOccupation = occupation === 'ፖሊስ';
 
   useEffect(() => {
+    setAddrRegion(landlord.region || DEFAULT_REGION_NAME);
+    setAddrZone(landlord.zone || inferZoneForCity(landlord.city));
     setAddrCity(landlord.city);
     setAddrWoreda(landlord.woreda);
     setAddrKebele(landlord.kebele);
@@ -130,6 +158,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     setAddrPhone(landlord.phone);
   }, [
     landlord.landlordId,
+    landlord.region,
+    landlord.zone,
     landlord.city,
     landlord.woreda,
     landlord.kebele,
@@ -139,6 +169,31 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
   ]);
 
   useEffect(() => {
+    if (!isCloudConnected) {
+      return subscribeFallbackStore((store) => {
+        const ownLandlords = store.landlords.filter(
+          (l) => l.ownerUid === firebaseUid && l.status === 'active'
+        );
+        if (ownLandlords.length > 0) {
+          setOwnedLandlords(ownLandlords);
+        }
+        const ownTenants = [...store.tenants]
+          .filter((item) => item.landlordUid === firebaseUid)
+          .sort(
+            (a, b) =>
+              (toJsDate(b.createdAt)?.getTime() || 0) - (toJsDate(a.createdAt)?.getTime() || 0)
+          );
+        setAllTenants(ownTenants);
+        const ownHistory = [...store.history]
+          .filter((h) => h.actorUid === firebaseUid)
+          .sort(
+            (a, b) =>
+              (toJsDate(b.createdAt)?.getTime() || 0) - (toJsDate(a.createdAt)?.getTime() || 0)
+          );
+        setHistory(ownHistory);
+      });
+    }
+
     const unsub = subscribeLandlordOwnData(firebaseUid, (data) => {
       if (data.landlords.length > 0) {
         setOwnedLandlords(data.landlords.filter((l) => l.status === 'active'));
@@ -153,52 +208,90 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
       setHistory(sortedHistory);
     });
     return unsub;
-  }, [firebaseUid]);
+  }, [firebaseUid, isCloudConnected]);
 
   const selectedReplacedTenant = useMemo(
     () => tenants.find((item) => item.tenantId === replacedTenantId),
     [tenants, replacedTenantId]
   );
 
-  const cities = useMemo(
-    () => Array.from(new Set(jurisdictions.map((j) => j.city))),
+  const regions = useMemo(
+    () =>
+      Array.from(
+        new Set(jurisdictions.map((j) => (j.region || DEFAULT_REGION_NAME).trim()).filter(Boolean))
+      ),
     [jurisdictions]
+  );
+  const zones = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          jurisdictions
+            .filter((j) => !addrRegion || (j.region || DEFAULT_REGION_NAME) === addrRegion)
+            .map((j) => (j.zone || inferZoneForCity(j.city)).trim())
+            .filter(Boolean)
+        )
+      ),
+    [jurisdictions, addrRegion]
+  );
+  const cities = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          jurisdictions
+            .filter(
+              (j) =>
+                (!addrRegion || (j.region || DEFAULT_REGION_NAME) === addrRegion) &&
+                (!addrZone || (j.zone || inferZoneForCity(j.city)) === addrZone)
+            )
+            .map((j) => j.city)
+        )
+      ),
+    [jurisdictions, addrRegion, addrZone]
   );
   const woredas = useMemo(
     () =>
       Array.from(
         new Set(
           jurisdictions
-            .filter((j) => !addrCity || j.city === addrCity)
+            .filter(
+              (j) =>
+                (!addrRegion || (j.region || DEFAULT_REGION_NAME) === addrRegion) &&
+                (!addrZone || (j.zone || inferZoneForCity(j.city)) === addrZone) &&
+                (!addrCity || j.city === addrCity)
+            )
             .map((j) => j.woreda)
         )
       ),
-    [jurisdictions, addrCity]
+    [jurisdictions, addrRegion, addrZone, addrCity]
   );
   const kebeles = useMemo(
     () =>
       Array.from(
         new Set(
           jurisdictions
-            .filter((j) => (!addrCity || j.city === addrCity) && (!addrWoreda || j.woreda === addrWoreda))
+            .filter(
+              (j) =>
+                (!addrRegion || (j.region || DEFAULT_REGION_NAME) === addrRegion) &&
+                (!addrZone || (j.zone || inferZoneForCity(j.city)) === addrZone) &&
+                (!addrCity || j.city === addrCity) &&
+                (!addrWoreda || j.woreda === addrWoreda)
+            )
             .map((j) => j.kebele)
         )
       ),
-    [jurisdictions, addrCity, addrWoreda]
+    [jurisdictions, addrRegion, addrZone, addrCity, addrWoreda]
   );
 
-  async function handleImageUpload(
-    e: React.ChangeEvent<HTMLInputElement>,
-    setter: (val: string) => void
-  ) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setErrorMsg('');
+  const [copiedDomain, setCopiedDomain] = useState('');
+
+  function handleCopyDomain(host: string) {
     try {
-      const compressed = await compressImageFile(file, 760, 0.68, 250000);
-      setter(compressed);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'ምስሉን ማስገባት አልተቻለም');
+      void navigator.clipboard?.writeText(host);
+      setCopiedDomain(host);
+      window.setTimeout(() => setCopiedDomain(''), 2000);
+    } catch {
+      // Ignore clipboard failure
     }
   }
 
@@ -244,14 +337,14 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     setBusy(true);
     setErrorMsg('');
     try {
-      await registerTenant(firebaseUid, landlord, {
+      const tenantPayload = {
         fullName,
         phone,
         maritalStatus,
         livingArrangement,
         coResidents,
         occupation,
-        idType: isPoliceOccupation ? 'police_digital' : 'fayda',
+        idType: (isPoliceOccupation ? 'police_digital' : 'fayda') as 'fayda' | 'police_digital',
         idNumber,
         idFrontImage,
         idBackImage,
@@ -259,7 +352,12 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         roomLabel,
         moveInDate,
         replacedTenant: entryMode === 'replace_tenant' ? selectedReplacedTenant : undefined,
-      });
+      };
+      if (isCloudConnected) {
+        await registerTenant(firebaseUid, landlord, tenantPayload);
+      } else {
+        await registerFallbackTenant(firebaseUid, landlord, tenantPayload);
+      }
       setReviewOpen(false);
       setFullName('');
       setPhone('');
@@ -289,14 +387,21 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      await updateLandlordAddress(firebaseUid, landlord, {
+      const addressUpdates = {
+        region: addrRegion,
+        zone: addrZone,
         city: addrCity,
         woreda: addrWoreda,
         kebele: addrKebele,
         houseNumber: addrHouseNo,
         roomCount: Number(addrRooms) || 1,
         phone: addrPhone,
-      });
+      };
+      if (isCloudConnected) {
+        await updateLandlordAddress(firebaseUid, landlord, addressUpdates);
+      } else {
+        await updateFallbackLandlordAddress(firebaseUid, landlord, addressUpdates);
+      }
       setSuccessMsg(
         lang === 'am'
           ? 'አዲሱ የአከራይ ቤት እና አድራሻ በሲስተሙና በታሪክ መዝገብ ውስጥ ተቀምጧል።'
@@ -314,7 +419,11 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      await markTenantMovedOut(firebaseUid, 'landlord', landlord.fullName, item);
+      if (isCloudConnected) {
+        await markTenantMovedOut(firebaseUid, 'landlord', landlord.fullName, item);
+      } else {
+        await markFallbackTenantMovedOut(firebaseUid, 'landlord', landlord.fullName, item);
+      }
       setSuccessMsg(
         lang === 'am'
           ? `ተከራይ ${item.fullName} መልቀቁ በታሪክ መዝገብ ውስጥ ተመዝግቧል።`
@@ -329,11 +438,19 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
 
   async function handleAddAdditionalProperty(e: React.FormEvent) {
     e.preventDefault();
-    if (!newPropCity || !newPropWoreda || !newPropKebele || !newPropHouseNo.trim() || newPropPass.length < 4) {
+    if (
+      !newPropRegion ||
+      !newPropZone ||
+      !newPropCity ||
+      !newPropWoreda ||
+      !newPropKebele ||
+      !newPropHouseNo.trim() ||
+      newPropPass.length < 4
+    ) {
       setErrorMsg(
         lang === 'am'
-          ? 'እባክዎ የአዲሱን ቤት ከተማ፣ ወረዳ፣ ቀበሌ፣ የቤት ቁጥር እና የይለፍ ቃልዎን ያስገቡ።'
-          : 'Please complete city, woreda, kebele, house number, and password confirmation.'
+          ? 'እባክዎ የአዲሱን ቤት ክልል፣ ዞን፣ ከተማ፣ ወረዳ፣ ቀበሌ፣ የቤት ቁጥር እና የይለፍ ቃልዎን ያስገቡ።'
+          : 'Please complete region, zone, city, woreda, kebele, house number, and password confirmation.'
       );
       return;
     }
@@ -355,24 +472,24 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         return;
       }
 
-      const created = await registerLandlord(
-        firebaseUid,
-        {
-          fullName: landlord.fullName,
-          phone: landlord.phone,
-          city: newPropCity,
-          woreda: newPropWoreda,
-          kebele: newPropKebele,
-          houseNumber: newPropHouseNo,
-          roomCount: Number(newPropRooms) || 1,
-          faydaId: landlord.faydaId,
-          idFrontImage: landlord.idFrontImage,
-          idBackImage: landlord.idBackImage,
-          password: newPropPass,
-        },
-        'landlord',
-        landlord.fullName
-      );
+      const propPayload = {
+        fullName: landlord.fullName,
+        phone: landlord.phone,
+        region: newPropRegion,
+        zone: newPropZone,
+        city: newPropCity,
+        woreda: newPropWoreda,
+        kebele: newPropKebele,
+        houseNumber: newPropHouseNo,
+        roomCount: Number(newPropRooms) || 1,
+        faydaId: landlord.faydaId,
+        idFrontImage: landlord.idFrontImage,
+        idBackImage: landlord.idBackImage,
+        password: newPropPass,
+      };
+      const created = isCloudConnected
+        ? await registerLandlord(firebaseUid, propPayload, 'landlord', landlord.fullName)
+        : await registerFallbackLandlord(firebaseUid, propPayload, 'landlord', landlord.fullName);
       setSelectedLandlordId(created.landlordId);
       setNewPropHouseNo('');
       setNewPropPass('');
@@ -388,16 +505,50 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     }
   }
 
+  const newPropZones = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          jurisdictions
+            .filter((j) => !newPropRegion || (j.region || DEFAULT_REGION_NAME) === newPropRegion)
+            .map((j) => (j.zone || inferZoneForCity(j.city)).trim())
+            .filter(Boolean)
+        )
+      ),
+    [jurisdictions, newPropRegion]
+  );
+
+  const newPropCities = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          jurisdictions
+            .filter(
+              (j) =>
+                (!newPropRegion || (j.region || DEFAULT_REGION_NAME) === newPropRegion) &&
+                (!newPropZone || (j.zone || inferZoneForCity(j.city)) === newPropZone)
+            )
+            .map((j) => j.city)
+        )
+      ),
+    [jurisdictions, newPropRegion, newPropZone]
+  );
+
   const newPropWoredas = useMemo(
     () =>
       Array.from(
         new Set(
           jurisdictions
-            .filter((j) => !newPropCity || j.city === newPropCity)
+            .filter(
+              (j) =>
+                (!newPropRegion || (j.region || DEFAULT_REGION_NAME) === newPropRegion) &&
+                (!newPropZone || (j.zone || inferZoneForCity(j.city)) === newPropZone) &&
+                (!newPropCity || j.city === newPropCity)
+            )
             .map((j) => j.woreda)
         )
       ),
-    [jurisdictions, newPropCity]
+    [jurisdictions, newPropRegion, newPropZone, newPropCity]
   );
 
   const newPropKebeles = useMemo(
@@ -405,11 +556,17 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
       Array.from(
         new Set(
           jurisdictions
-            .filter((j) => (!newPropCity || j.city === newPropCity) && (!newPropWoreda || j.woreda === newPropWoreda))
+            .filter(
+              (j) =>
+                (!newPropRegion || (j.region || DEFAULT_REGION_NAME) === newPropRegion) &&
+                (!newPropZone || (j.zone || inferZoneForCity(j.city)) === newPropZone) &&
+                (!newPropCity || j.city === newPropCity) &&
+                (!newPropWoreda || j.woreda === newPropWoreda)
+            )
             .map((j) => j.kebele)
         )
       ),
-    [jurisdictions, newPropCity, newPropWoreda]
+    [jurisdictions, newPropRegion, newPropZone, newPropCity, newPropWoreda]
   );
 
   const filteredHistory = useMemo(() => {
@@ -548,11 +705,53 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
       <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Ornamental System Title Banner */}
         <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-xl px-4 py-3.5 sm:px-6 sm:py-4 text-center">
-          <h2 className="text-lg sm:text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-amber-200 to-white">
+          <h2 className="text-lg sm:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-emerald-300">
             {t.systemTitle}
           </h2>
-          <p className="text-xs text-amber-300 font-medium mt-0.5">{branding.commissionName}</p>
+          <p className="text-xs text-cyan-300 font-bold mt-0.5">{branding.commissionName}</p>
         </section>
+
+        {!isCloudConnected && (
+          <section className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-2 text-xs text-blue-950">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-semibold">
+                <Cloud className="w-4 h-4 text-blue-700 shrink-0" />
+                <span>
+                  {lang === 'am'
+                    ? 'የአካባቢ ሁነታ (Fallback Mode) — ለቀጥታ Firestore Cloud ይህን ዶሜይን በFirebase Console ያክሉ፦'
+                    : `Local Fallback active — Add this domain in Firebase Console (${FIREBASE_PROJECT_ID}) Authorized domains:`}
+                </span>
+              </div>
+              {onRetryCloudConnect && (
+                <button
+                  type="button"
+                  onClick={() => void onRetryCloudConnect()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold shrink-0"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  {lang === 'am' ? 'ከFirestore Cloud ጋር አገናኝ' : 'Connect Firestore Cloud'}
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {getHostnamesToAuthorize().map((host) => (
+                <button
+                  key={host}
+                  type="button"
+                  onClick={() => handleCopyDomain(host)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-blue-200 text-[11px] font-mono-tabular text-blue-900 hover:bg-blue-100"
+                >
+                  <span className="truncate max-w-[230px] sm:max-w-none">{host}</span>
+                  {copiedDomain === host ? (
+                    <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Copy className="w-3 h-3 text-blue-600 shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Strict Private Landlord Summary Strip (Own Data Only) */}
         <section className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -865,71 +1064,38 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      {t.idFrontLabel}
-                    </label>
-                    <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-white rounded-lg p-3 cursor-pointer hover:bg-slate-50">
-                      {sanitizeImageSrc(idFrontImage) ? (
-                        <img src={sanitizeImageSrc(idFrontImage)} alt="ID Front" className="h-28 w-full object-contain" />
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 py-6">
-                          <Upload className="w-4 h-4" />
-                          <span>{t.uploadFront}</span>
-                        </div>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => void handleImageUpload(e, setIdFrontImage)}
-                      />
-                    </label>
-                  </div>
+                  <SmartPhotoInput
+                    label={t.idFrontLabel}
+                    value={idFrontImage}
+                    onChange={setIdFrontImage}
+                    cropMode="id_card"
+                    cameraFacing="environment"
+                    theme="light"
+                    lang={lang}
+                    previewAlt="ID Front"
+                  />
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      {t.idBackLabel}
-                    </label>
-                    <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-white rounded-lg p-3 cursor-pointer hover:bg-slate-50">
-                      {sanitizeImageSrc(idBackImage) ? (
-                        <img src={sanitizeImageSrc(idBackImage)} alt="ID Back" className="h-28 w-full object-contain" />
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 py-6">
-                          <Upload className="w-4 h-4" />
-                          <span>{t.uploadBack}</span>
-                        </div>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => void handleImageUpload(e, setIdBackImage)}
-                      />
-                    </label>
-                  </div>
+                  <SmartPhotoInput
+                    label={t.idBackLabel}
+                    value={idBackImage}
+                    onChange={setIdBackImage}
+                    cropMode="id_card"
+                    cameraFacing="environment"
+                    theme="light"
+                    lang={lang}
+                    previewAlt="ID Back"
+                  />
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      {t.portraitLabel}
-                    </label>
-                    <label className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-white rounded-lg p-3 cursor-pointer hover:bg-slate-50">
-                      {sanitizeImageSrc(portraitImage) ? (
-                        <img src={sanitizeImageSrc(portraitImage)} alt="Portrait" className="h-28 w-full object-contain" />
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 py-6">
-                          <Upload className="w-4 h-4" />
-                          <span>{t.portraitLabel}</span>
-                        </div>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => void handleImageUpload(e, setPortraitImage)}
-                      />
-                    </label>
-                  </div>
+                  <SmartPhotoInput
+                    label={t.portraitLabel}
+                    value={portraitImage}
+                    onChange={setPortraitImage}
+                    cropMode="portrait"
+                    cameraFacing="environment"
+                    theme="light"
+                    lang={lang}
+                    previewAlt="Tenant Portrait"
+                  />
                 </div>
               </div>
 
@@ -1129,6 +1295,56 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               </div>
 
               <form onSubmit={handleSaveAddressChange} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.regionLabel}
+                    </label>
+                    <select
+                      required
+                      value={addrRegion}
+                      onChange={(e) => {
+                        setAddrRegion(e.target.value);
+                        setAddrZone('');
+                        setAddrCity('');
+                        setAddrWoreda('');
+                        setAddrKebele('');
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                    >
+                      <option value="">{t.selectRegion}</option>
+                      {regions.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.zoneLabel}
+                    </label>
+                    <select
+                      required
+                      value={addrZone}
+                      onChange={(e) => {
+                        setAddrZone(e.target.value);
+                        setAddrCity('');
+                        setAddrWoreda('');
+                        setAddrKebele('');
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                    >
+                      <option value="">{t.selectZone}</option>
+                      {zones.map((z) => (
+                        <option key={z} value={z}>
+                          {z}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1144,6 +1360,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                       }}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
                     >
+                      <option value="">{t.selectCity}</option>
                       {cities.map((c) => (
                         <option key={c} value={c}>
                           {c}
@@ -1255,6 +1472,56 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               </div>
 
               <form onSubmit={handleAddAdditionalProperty} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.regionLabel}
+                    </label>
+                    <select
+                      required
+                      value={newPropRegion}
+                      onChange={(e) => {
+                        setNewPropRegion(e.target.value);
+                        setNewPropZone('');
+                        setNewPropCity('');
+                        setNewPropWoreda('');
+                        setNewPropKebele('');
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                    >
+                      <option value="">{t.selectRegion}</option>
+                      {regions.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.zoneLabel}
+                    </label>
+                    <select
+                      required
+                      value={newPropZone}
+                      onChange={(e) => {
+                        setNewPropZone(e.target.value);
+                        setNewPropCity('');
+                        setNewPropWoreda('');
+                        setNewPropKebele('');
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                    >
+                      <option value="">{t.selectZone}</option>
+                      {newPropZones.map((z) => (
+                        <option key={z} value={z}>
+                          {z}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1270,7 +1537,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                       }}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
                     >
-                      {cities.map((c) => (
+                      <option value="">{t.selectCity}</option>
+                      {newPropCities.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>

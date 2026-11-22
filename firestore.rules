@@ -109,8 +109,12 @@ service cloud.firestore {
 
     function isValidJurisdiction(data) {
       return data.keys().hasAll(['id', 'city', 'woreda', 'kebele', 'createdByUid', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'city', 'woreda', 'kebele', 'createdByUid', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'region', 'zone', 'city', 'woreda', 'kebele', 'createdByUid', 'createdAt'
+        ]) &&
         isValidId(data.id) &&
+        (!('region' in data) || isStringMax(data.region, 100)) &&
+        (!('zone' in data) || isStringMax(data.zone, 100)) &&
         isNonEmptyStringMax(data.city, 100) &&
         isNonEmptyStringMax(data.woreda, 100) &&
         isNonEmptyStringMax(data.kebele, 100) &&
@@ -166,7 +170,7 @@ service cloud.firestore {
           'idBackImage', 'passwordHash', 'passwordSalt', 'status', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'landlordId', 'ownerUid', 'fullName', 'phone', 'city', 'woreda',
+          'landlordId', 'ownerUid', 'fullName', 'phone', 'region', 'zone', 'city', 'woreda',
           'kebele', 'houseNumber', 'roomCount', 'faydaId', 'idFrontImage',
           'idBackImage', 'passwordHash', 'passwordSalt', 'status',
           'replacedByLandlordId', 'createdAt', 'updatedAt'
@@ -175,6 +179,8 @@ service cloud.firestore {
         isValidId(data.ownerUid) &&
         isNonEmptyStringMax(data.fullName, 150) &&
         isNonEmptyStringMax(data.phone, 30) &&
+        (!('region' in data) || isStringMax(data.region, 100)) &&
+        (!('zone' in data) || isStringMax(data.zone, 100)) &&
         isNonEmptyStringMax(data.city, 100) &&
         isNonEmptyStringMax(data.woreda, 100) &&
         isNonEmptyStringMax(data.kebele, 100) &&
@@ -207,7 +213,7 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'tenantId', 'landlordId', 'landlordUid', 'landlordName', 'landlordPhone',
-          'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel', 'fullName',
+          'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel', 'fullName',
           'phone', 'maritalStatus', 'livingArrangement', 'coResidents',
           'occupation', 'isPoliceTenant', 'idType', 'idNumber',
           'idFrontImage', 'idBackImage', 'portraitImage', 'moveInDate',
@@ -218,6 +224,8 @@ service cloud.firestore {
         isValidId(data.landlordUid) &&
         isNonEmptyStringMax(data.landlordName, 150) &&
         isNonEmptyStringMax(data.landlordPhone, 30) &&
+        (!('region' in data) || isStringMax(data.region, 100)) &&
+        (!('zone' in data) || isStringMax(data.zone, 100)) &&
         isNonEmptyStringMax(data.city, 100) &&
         isNonEmptyStringMax(data.woreda, 100) &&
         isNonEmptyStringMax(data.kebele, 100) &&
@@ -424,7 +432,13 @@ service cloud.firestore {
       allow create: if isValidId(jurisdictionId) && isAdmin() && isValidJurisdiction(incoming()) &&
         incoming().id == jurisdictionId && incoming().createdByUid == request.auth.uid &&
         incoming().createdAt == request.time;
-      allow update: if false;
+      allow update: if isValidId(jurisdictionId) && isAdmin() && isValidJurisdiction(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'region', 'zone', 'city', 'woreda', 'kebele'
+        ]);
       allow delete: if isValidId(jurisdictionId) && isAdmin();
     }
 
@@ -480,7 +494,7 @@ service cloud.firestore {
             isPolice() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'fullName', 'phone', 'faydaId', 'idFrontImage', 'idBackImage',
-              'city', 'woreda', 'kebele', 'houseNumber', 'roomCount',
+              'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomCount',
               'status', 'replacedByLandlordId', 'passwordHash', 'passwordSalt', 'updatedAt'
             ])
           ) ||
@@ -489,7 +503,7 @@ service cloud.firestore {
             incoming().ownerUid == existing().ownerUid &&
             incoming().status == existing().status &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'city', 'woreda', 'kebele', 'houseNumber', 'roomCount', 'phone', 'updatedAt'
+              'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomCount', 'phone', 'updatedAt'
             ])
           )
         );
@@ -524,7 +538,7 @@ service cloud.firestore {
             isPolice() &&
             exists(/databases/$(database)/documents/landlords/$(incoming().landlordId)) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'status', 'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel',
+              'status', 'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel',
               'landlordId', 'landlordName', 'landlordPhone', 'updatedAt'
             ])
           ) ||

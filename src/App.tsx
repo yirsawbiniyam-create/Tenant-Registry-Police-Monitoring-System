@@ -16,12 +16,43 @@ import {
   seedDefaultJurisdictionsIfEmpty,
   subscribeBranding,
   subscribeJurisdictions,
+  syncFallbackRecordsToCloud,
 } from './services/firestoreService';
+import {
+  ensureFallbackInitialized,
+  subscribeFallbackStore,
+  type FallbackStoreState,
+} from './utils/localFallback';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LoginPortal } from './components/LoginPortal';
 import { LandlordPortal } from './components/LandlordPortal';
 import { PoliceAdminPortal } from './components/PoliceAdminPortal';
 import { DICT, type Lang } from './i18n';
+
+function getDomainFallbackKey(): string {
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'local';
+  return `bg_domain_fallback_${host}`;
+}
+
+function readStoredDomainFallback(): boolean {
+  try {
+    return window.sessionStorage.getItem(getDomainFallbackKey()) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredDomainFallback(active: boolean) {
+  try {
+    if (active) {
+      window.sessionStorage.setItem(getDomainFallbackKey(), '1');
+    } else {
+      window.sessionStorage.removeItem(getDomainFallbackKey());
+    }
+  } catch {
+    // Ignore sessionStorage access restrictions
+  }
+}
 
 function AppContent() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -29,7 +60,18 @@ function AppContent() {
   const [isFirebaseAdmin, setIsFirebaseAdmin] = useState(false);
   const [isFirebasePolice, setIsFirebasePolice] = useState(false);
 
-  const [branding, setBranding] = useState<BrandingSetting>({
+  const [domainFallbackActive, setDomainFallbackActiveState] = useState<boolean>(() =>
+    readStoredDomainFallback()
+  );
+  const [fallbackUid, setFallbackUid] = useState('');
+  const [fallbackStore, setFallbackStore] = useState<FallbackStoreState | null>(null);
+
+  const setDomainFallbackActive = (active: boolean) => {
+    writeStoredDomainFallback(active);
+    setDomainFallbackActiveState(active);
+  };
+
+  const [cloudBranding, setCloudBranding] = useState<BrandingSetting>({
     commissionName: DEFAULT_COMMISSION_NAME,
     subtitle: DEFAULT_COMMISSION_SUBTITLE,
     logoDataUrl: DEFAULT_LOGO_PATH,
@@ -39,7 +81,7 @@ function AppContent() {
     updatedAt: null,
   });
 
-  const [jurisdictions, setJurisdictions] = useState<Jurisdiction[]>(
+  const [cloudJurisdictions, setCloudJurisdictions] = useState<Jurisdiction[]>(
     DEFAULT_JURISDICTIONS.map((j) => ({ ...j, createdByUid: 'seed', createdAt: null }))
   );
 
@@ -52,8 +94,9 @@ function AppContent() {
   }, [lang]);
 
   useEffect(() => {
-    const unsubBrand = subscribeBranding(setBranding);
-    const unsubJur = subscribeJurisdictions(setJurisdictions);
+    const unsubBrand = subscribeBranding(setCloudBranding);
+    const unsubJur = subscribeJurisdictions(setCloudJurisdictions);
+    const unsubFallback = subscribeFallbackStore(setFallbackStore);
 
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
@@ -79,6 +122,8 @@ function AppContent() {
         }
         setIsFirebaseAdmin(admin);
         setIsFirebasePolice(police);
+        setDomainFallbackActive(false);
+        setFallbackUid('');
         if (admin) {
           void seedDefaultJurisdictionsIfEmpty(user.uid).catch((err) => {
             console.warn('Jurisdiction seed skipped:', err);
@@ -87,10 +132,17 @@ function AppContent() {
             console.warn('Admin credentials seed deferred:', err);
           });
         }
+        void syncFallbackRecordsToCloud({
+          uid: user.uid,
+          isAdmin: admin,
+          isPolice: police,
+        }).catch((err) => {
+          console.warn('Fallback sync skipped:', err);
+        });
       } else {
         setIsFirebaseAdmin(false);
         setIsFirebasePolice(false);
-        setSession(null);
+        setSession((prev) => (fallbackUid ? prev : null));
       }
       setAuthReady(true);
     });
@@ -98,22 +150,40 @@ function AppContent() {
     return () => {
       unsubBrand();
       unsubJur();
+      unsubFallback();
       unsubAuth();
     };
-  }, []);
+  }, [fallbackUid]);
 
   const [signingIn, setSigningIn] = useState(false);
 
-  async function handleSignInGoogle(): Promise<{ ok: boolean; user?: User; error?: string }> {
+  async function handleSignInGoogle(): Promise<{
+    ok: boolean;
+    user?: User;
+    unauthorizedDomain?: boolean;
+    error?: string;
+  }> {
     if (signingIn) {
       return { ok: false, error: 'የGoogle መግቢያ መስኮት አስቀድሞ ተከፍቷል። እባክዎ ይጨርሱ ወይም ይዝጉት።' };
     }
     setSigningIn(true);
     try {
       const cred = await signInWithPopup(auth, googleProvider);
+      setDomainFallbackActive(false);
       return { ok: true, user: cred.user };
     } catch (err) {
       const code = (err as { code?: string })?.code || '';
+      const msg = err instanceof Error ? err.message : '';
+      if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+        await ensureFallbackInitialized();
+        setDomainFallbackActive(true);
+        return {
+          ok: false,
+          unauthorizedDomain: true,
+          error:
+            'ይህ ዶሜይን በFirebase Console Authorized Domains ላይ ስላልተመዘገበ በአካባቢያዊ አስተማማኝ መግቢያ (Fallback Mode) ተከፍቷል።',
+        };
+      }
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         return {
           ok: false,
@@ -121,9 +191,13 @@ function AppContent() {
         };
       }
       if (code === 'auth/popup-blocked') {
+        await ensureFallbackInitialized();
+        setDomainFallbackActive(true);
         return {
           ok: false,
-          error: 'የGoogle መግቢያ መስኮት በብራውዘርዎ ታግዷል። እባክዎ Pop-up ይፍቀዱና እንደገና ይሞክሩ።',
+          unauthorizedDomain: true,
+          error:
+            'የብራውዘሩ Pop-up ስለታገደ በአካባቢያዊ አስተማማኝ መግቢያ ተከፍቷል። ለFirestore Cloud Pop-up ይፍቀዱ።',
         };
       }
       return {
@@ -135,10 +209,34 @@ function AppContent() {
     }
   }
 
+  async function handleRetryCloudConnect() {
+    setDomainFallbackActive(false);
+    return handleSignInGoogle();
+  }
+
   async function handleSignOutGoogle() {
     setSession(null);
-    await signOut(auth);
+    setFallbackUid('');
+    if (firebaseUser) {
+      await signOut(auth);
+    }
   }
+
+  function handleEnterSession(nextSession: ActivePortalSession, localFallbackUserUid?: string) {
+    if (localFallbackUserUid) {
+      setDomainFallbackActive(true);
+      setFallbackUid(localFallbackUserUid);
+    } else {
+      setFallbackUid('');
+    }
+    setSession(nextSession);
+  }
+
+  const isCloudConnected = Boolean(firebaseUser && firebaseUser.emailVerified);
+  const branding =
+    domainFallbackActive && fallbackStore ? fallbackStore.branding : cloudBranding;
+  const jurisdictions =
+    domainFallbackActive && fallbackStore ? fallbackStore.jurisdictions : cloudJurisdictions;
 
   if (!authReady) {
     return (
@@ -151,17 +249,24 @@ function AppContent() {
     );
   }
 
-  if (session && firebaseUser) {
+  if (session && (isCloudConnected || (domainFallbackActive && fallbackUid))) {
+    const activeUid = isCloudConnected && firebaseUser ? firebaseUser.uid : fallbackUid;
+
     if (session.role === 'landlord') {
       return (
         <LandlordPortal
-          firebaseUid={firebaseUser.uid}
+          isCloudConnected={isCloudConnected}
+          firebaseUid={activeUid}
           initialLandlord={session.landlord}
           branding={branding}
           jurisdictions={jurisdictions}
           lang={lang}
           onToggleLang={toggleLang}
-          onLogout={() => setSession(null)}
+          onRetryCloudConnect={handleRetryCloudConnect}
+          onLogout={() => {
+            setSession(null);
+            setFallbackUid('');
+          }}
         />
       );
     }
@@ -169,7 +274,8 @@ function AppContent() {
     if (session.role === 'police') {
       return (
         <PoliceAdminPortal
-          firebaseUid={firebaseUser.uid}
+          isCloudConnected={isCloudConnected}
+          firebaseUid={activeUid}
           mode="police"
           actorName={`${session.officer.rank} ${session.officer.fullName}`}
           officer={session.officer}
@@ -177,15 +283,20 @@ function AppContent() {
           jurisdictions={jurisdictions}
           lang={lang}
           onToggleLang={toggleLang}
-          onLogout={() => setSession(null)}
+          onRetryCloudConnect={handleRetryCloudConnect}
+          onLogout={() => {
+            setSession(null);
+            setFallbackUid('');
+          }}
         />
       );
     }
 
-    if (session.role === 'admin' && isFirebaseAdmin) {
+    if (session.role === 'admin' && (isFirebaseAdmin || domainFallbackActive)) {
       return (
         <PoliceAdminPortal
-          firebaseUid={firebaseUser.uid}
+          isCloudConnected={isCloudConnected}
+          firebaseUid={activeUid}
           mode="admin"
           actorName={session.displayName}
           actorEmail={session.email}
@@ -194,7 +305,11 @@ function AppContent() {
           jurisdictions={jurisdictions}
           lang={lang}
           onToggleLang={toggleLang}
-          onLogout={() => setSession(null)}
+          onRetryCloudConnect={handleRetryCloudConnect}
+          onLogout={() => {
+            setSession(null);
+            setFallbackUid('');
+          }}
         />
       );
     }
@@ -205,13 +320,15 @@ function AppContent() {
       firebaseUser={firebaseUser}
       isFirebaseAdmin={isFirebaseAdmin}
       isFirebasePolice={isFirebasePolice}
+      domainFallbackActive={domainFallbackActive}
       branding={branding}
       jurisdictions={jurisdictions}
       lang={lang}
       onToggleLang={toggleLang}
       onSignInGoogle={handleSignInGoogle}
+      onRetryCloudConnect={handleRetryCloudConnect}
       onSignOutGoogle={handleSignOutGoogle}
-      onEnterSession={setSession}
+      onEnterSession={handleEnterSession}
     />
   );
 }

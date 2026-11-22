@@ -26,9 +26,13 @@ export interface AppStrings {
   registerSubtitle: string;
   fullNameLabel: string;
   phoneUsernameLabel: string;
+  regionLabel: string;
+  zoneLabel: string;
   cityLabel: string;
   woredaLabel: string;
   kebeleLabel: string;
+  selectRegion: string;
+  selectZone: string;
   selectCity: string;
   selectWoreda: string;
   selectKebele: string;
@@ -224,9 +228,13 @@ export const DICT: Record<Lang, AppStrings> = {
     registerSubtitle: 'አከራይ ስለመሆንዎ መረጃ ይሙሉ፤ ከተመዘገቡ በኋላ ሎጊን ብለው በመግባት ተከራዮችን መመዝገብ ይችላሉ።',
     fullNameLabel: 'ሙሉ ስም ከነአያት *',
     phoneUsernameLabel: 'ስልክ ቁጥር (ዩዘርኔም ይሆናል) *',
+    regionLabel: 'ክልል *',
+    zoneLabel: 'ዞን *',
     cityLabel: 'ከተማ *',
     woredaLabel: 'ወረዳ *',
     kebeleLabel: 'ቀበሌ *',
+    selectRegion: 'ክልል ይምረጡ',
+    selectZone: 'ዞን ይምረጡ',
     selectCity: 'ከተማ ይምረጡ',
     selectWoreda: 'ወረዳ ይምረጡ',
     selectKebele: 'ቀበሌ ይምረጡ',
@@ -416,9 +424,13 @@ export const DICT: Record<Lang, AppStrings> = {
     registerSubtitle: 'Submit your property owner details and Fayda ID, then log in to register tenants.',
     fullNameLabel: 'Full Name (with Grandfather) *',
     phoneUsernameLabel: 'Phone Number (Login Username) *',
+    regionLabel: 'Region *',
+    zoneLabel: 'Zone *',
     cityLabel: 'City *',
     woredaLabel: 'Woreda *',
     kebeleLabel: 'Kebele *',
+    selectRegion: 'Select Region',
+    selectZone: 'Select Zone',
     selectCity: 'Select City',
     selectWoreda: 'Select Woreda',
     selectKebele: 'Select Kebele',

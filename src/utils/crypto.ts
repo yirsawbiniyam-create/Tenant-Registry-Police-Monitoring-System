@@ -149,6 +149,27 @@ export function normalizePhone(phone: string): string {
   return phone.replace(/[\s\-()]/g, '').trim();
 }
 
+export function canonicalPhoneDigits(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('251') && digits.length >= 12) {
+    return digits.slice(3);
+  }
+  if (digits.startsWith('0') && digits.length >= 10) {
+    return digits.slice(1);
+  }
+  return digits;
+}
+
+export function phonesMatch(a: string, b: string): boolean {
+  const na = normalizePhone(a);
+  const nb = normalizePhone(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const ca = canonicalPhoneDigits(na);
+  const cb = canonicalPhoneDigits(nb);
+  return Boolean(ca && cb && ca === cb);
+}
+
 export function normalizeText(val: string): string {
   return val.trim().toLowerCase().replace(/\s+/g, ' ');
 }

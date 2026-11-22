@@ -46,6 +46,8 @@ export interface AdminCredential {
 
 export interface Jurisdiction {
   id: string;
+  region?: string;
+  zone?: string;
   city: string;
   woreda: string;
   kebele: string;
@@ -78,6 +80,8 @@ export interface Landlord {
   ownerUid: string;
   fullName: string;
   phone: string;
+  region?: string;
+  zone?: string;
   city: string;
   woreda: string;
   kebele: string;
@@ -100,6 +104,8 @@ export interface Tenant {
   landlordUid: string;
   landlordName: string;
   landlordPhone: string;
+  region?: string;
+  zone?: string;
   city: string;
   woreda: string;
   kebele: string;

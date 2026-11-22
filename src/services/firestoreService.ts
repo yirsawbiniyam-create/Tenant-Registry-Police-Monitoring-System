@@ -34,16 +34,20 @@ import {
   hashPassword,
   normalizePhone,
   normalizeText,
+  phonesMatch,
   sanitizeImageSrc,
   verifyPassword,
 } from '../utils/crypto';
+import { getFallbackSnapshot, markFallbackIdsSynced } from '../utils/localFallback';
 import {
   DEFAULT_COMMISSION_NAME,
   DEFAULT_COMMISSION_SUBTITLE,
   DEFAULT_ETHIOPIAN_FLAG_PATH,
   DEFAULT_JURISDICTIONS,
   DEFAULT_LOGO_PATH,
+  DEFAULT_REGION_NAME,
   DEFAULT_REGIONAL_FLAG_PATH,
+  inferZoneForCity,
   resolveEthiopianFlagSrc,
   resolveRegionalFlagSrc,
 } from '../utils/seedData';
@@ -275,7 +279,14 @@ export function subscribeJurisdictions(
           }))
         );
       } else {
-        const list = snap.docs.map((d) => d.data() as Jurisdiction);
+        const list = snap.docs.map((d) => {
+          const j = d.data() as Jurisdiction;
+          return {
+            ...j,
+            region: j.region || DEFAULT_REGION_NAME,
+            zone: j.zone || inferZoneForCity(j.city),
+          };
+        });
         onData(list);
       }
     },
@@ -294,6 +305,8 @@ export async function seedDefaultJurisdictionsIfEmpty(uid: string): Promise<void
       DEFAULT_JURISDICTIONS.map((j) =>
         setDoc(doc(db, 'jurisdictions', j.id), {
           id: j.id,
+          region: j.region,
+          zone: j.zone,
           city: j.city,
           woreda: j.woreda,
           kebele: j.kebele,
@@ -309,23 +322,62 @@ export async function seedDefaultJurisdictionsIfEmpty(uid: string): Promise<void
 
 export async function addJurisdiction(
   uid: string,
-  city: string,
-  woreda: string,
-  kebele: string
+  input: {
+    region: string;
+    zone: string;
+    city: string;
+    woreda: string;
+    kebele: string;
+  }
 ): Promise<void> {
   const id = createValidId('jur');
   const path = `jurisdictions/${id}`;
   try {
     await setDoc(doc(db, 'jurisdictions', id), {
       id,
-      city: city.trim().slice(0, 100),
-      woreda: woreda.trim().slice(0, 100),
-      kebele: kebele.trim().slice(0, 100),
+      region: (input.region || DEFAULT_REGION_NAME).trim().slice(0, 100),
+      zone: (input.zone || inferZoneForCity(input.city)).trim().slice(0, 100),
+      city: input.city.trim().slice(0, 100),
+      woreda: input.woreda.trim().slice(0, 100),
+      kebele: input.kebele.trim().slice(0, 100),
       createdByUid: uid,
       createdAt: serverTimestamp(),
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, path);
+  }
+}
+
+export async function updateJurisdiction(
+  jurisdictionId: string,
+  updates: {
+    region: string;
+    zone: string;
+    city: string;
+    woreda: string;
+    kebele: string;
+  }
+): Promise<void> {
+  const path = `jurisdictions/${jurisdictionId}`;
+  try {
+    await updateDoc(doc(db, 'jurisdictions', jurisdictionId), {
+      region: (updates.region || DEFAULT_REGION_NAME).trim().slice(0, 100),
+      zone: (updates.zone || inferZoneForCity(updates.city)).trim().slice(0, 100),
+      city: updates.city.trim().slice(0, 100),
+      woreda: updates.woreda.trim().slice(0, 100),
+      kebele: updates.kebele.trim().slice(0, 100),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteJurisdiction(jurisdictionId: string): Promise<void> {
+  const path = `jurisdictions/${jurisdictionId}`;
+  try {
+    await deleteDoc(doc(db, 'jurisdictions', jurisdictionId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
   }
 }
 
@@ -643,6 +695,8 @@ export async function registerLandlord(
   input: {
     fullName: string;
     phone: string;
+    region?: string;
+    zone?: string;
     city: string;
     woreda: string;
     kebele: string;
@@ -668,6 +722,8 @@ export async function registerLandlord(
       ownerUid,
       fullName: input.fullName.trim().slice(0, 150),
       phone: normalizePhone(input.phone).slice(0, 30),
+      region: (input.region || DEFAULT_REGION_NAME).trim().slice(0, 100),
+      zone: (input.zone || inferZoneForCity(input.city)).trim().slice(0, 100),
       city: input.city.trim().slice(0, 100),
       woreda: input.woreda.trim().slice(0, 100),
       kebele: input.kebele.trim().slice(0, 100),
@@ -696,7 +752,7 @@ export async function registerLandlord(
       city: payload.city,
       woreda: payload.woreda,
       kebele: payload.kebele,
-      details: `አዲስ አከራይ ተመዝግቧል — ${payload.roomCount} ክፍሎች፣ የቤት ቁጥር ${payload.houseNumber} (${payload.city}, ${payload.woreda}, ${payload.kebele})።`,
+      details: `አዲስ አከራይ ተመዝግቧል — ${payload.roomCount} ክፍሎች፣ የቤት ቁጥር ${payload.houseNumber} (${payload.region}, ${payload.zone}, ${payload.city}, ${payload.woreda}, ${payload.kebele})።`,
     });
     return payload as unknown as Landlord;
   } catch (err) {
@@ -708,6 +764,8 @@ export async function updateLandlordAddress(
   actorUid: string,
   landlord: Landlord,
   updates: {
+    region?: string;
+    zone?: string;
     city: string;
     woreda: string;
     kebele: string;
@@ -719,6 +777,8 @@ export async function updateLandlordAddress(
   const path = `landlords/${landlord.landlordId}`;
   try {
     await updateDoc(doc(db, 'landlords', landlord.landlordId), {
+      region: (updates.region || landlord.region || DEFAULT_REGION_NAME).trim().slice(0, 100),
+      zone: (updates.zone || inferZoneForCity(updates.city)).trim().slice(0, 100),
       city: updates.city.trim().slice(0, 100),
       woreda: updates.woreda.trim().slice(0, 100),
       kebele: updates.kebele.trim().slice(0, 100),
@@ -840,6 +900,8 @@ export async function registerTenant(
       landlordUid: landlord.ownerUid,
       landlordName: landlord.fullName.slice(0, 150),
       landlordPhone: landlord.phone.slice(0, 30),
+      region: (landlord.region || DEFAULT_REGION_NAME).slice(0, 100),
+      zone: (landlord.zone || inferZoneForCity(landlord.city)).slice(0, 100),
       city: landlord.city.slice(0, 100),
       woreda: landlord.woreda.slice(0, 100),
       kebele: landlord.kebele.slice(0, 100),
@@ -1408,9 +1470,7 @@ export function checkWantedMatch(wanted: WantedPerson, tenant: Tenant): string |
     return 'የፋይዳ/መታወቂያ ቁጥር ተመሳሳይነት';
   }
 
-  const wPhone = normalizePhone(wanted.phone || '');
-  const tPhone = normalizePhone(tenant.phone || '');
-  if (wPhone && tPhone && wPhone.length >= 9 && wPhone === tPhone) {
+  if (phonesMatch(wanted.phone || '', tenant.phone || '')) {
     return 'የስልክ ቁጥር ተመሳሳይነት';
   }
 
@@ -1428,4 +1488,286 @@ export function checkWantedMatch(wanted: WantedPerson, tenant: Tenant): string |
   }
 
   return null;
+}
+
+export async function syncFallbackRecordsToCloud(params: {
+  uid: string;
+  isAdmin: boolean;
+  isPolice: boolean;
+}): Promise<{ syncedCount: number }> {
+  const store = getFallbackSnapshot();
+  if (!store) return { syncedCount: 0 };
+
+  const syncedSet = new Set(store.syncedCloudIds || []);
+  const newlySyncedIds: string[] = [];
+  let syncedCount = 0;
+
+  if (params.isAdmin) {
+    for (const jur of store.jurisdictions) {
+      if (jur.createdByUid === 'seed' || syncedSet.has(jur.id)) continue;
+      try {
+        const ref = doc(db, 'jurisdictions', jur.id);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          await setDoc(ref, {
+            id: jur.id,
+            region: (jur.region || DEFAULT_REGION_NAME).slice(0, 100),
+            zone: (jur.zone || inferZoneForCity(jur.city)).slice(0, 100),
+            city: jur.city.slice(0, 100),
+            woreda: jur.woreda.slice(0, 100),
+            kebele: jur.kebele.slice(0, 100),
+            createdByUid: params.uid,
+            createdAt: serverTimestamp(),
+          });
+          syncedCount++;
+        }
+        newlySyncedIds.push(jur.id);
+      } catch {
+        // Defer retry until authorized/valid
+      }
+    }
+
+    for (const off of store.officers) {
+      if (syncedSet.has(off.officerId)) continue;
+      if (!FIELD_LIMITS.USERNAME_PATTERN.test(off.username)) continue;
+      try {
+        const ref = doc(db, 'police_officers', off.officerId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          const payload: Record<string, unknown> = {
+            officerId: off.officerId,
+            fullName: off.fullName.slice(0, 150),
+            rank: off.rank.slice(0, 80),
+            badgeNumber: off.badgeNumber.slice(0, 60),
+            phone: off.phone.slice(0, 30),
+            username: off.username.slice(0, 60),
+            passwordHash: off.passwordHash,
+            passwordSalt: off.passwordSalt,
+            jurisdictionLevel: off.jurisdictionLevel,
+            city: off.city.slice(0, 100),
+            woreda: (off.woreda || '').slice(0, 100),
+            kebele: (off.kebele || '').slice(0, 100),
+            active: Boolean(off.active),
+            createdByUid: params.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+          const cleanEmail = (off.officerEmail || '').trim().toLowerCase();
+          if (cleanEmail) {
+            payload.officerEmail = cleanEmail.slice(0, 160);
+            await setDoc(doc(db, 'police_emails', cleanEmail), {
+              email: cleanEmail,
+              officerId: off.officerId,
+              active: Boolean(off.active),
+              createdByUid: params.uid,
+              createdAt: serverTimestamp(),
+            });
+          }
+          await setDoc(ref, payload);
+          syncedCount++;
+        }
+        newlySyncedIds.push(off.officerId);
+      } catch {
+        // Defer retry
+      }
+    }
+  }
+
+  // Sync Landlords (owned by user or pushed by Police/Admin)
+  const landlordOwnerMap = new Map<string, string>();
+  for (const ll of store.landlords) {
+    if (syncedSet.has(ll.landlordId)) {
+      landlordOwnerMap.set(ll.landlordId, ll.ownerUid);
+      continue;
+    }
+    try {
+      const ref = doc(db, 'landlords', ll.landlordId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const existingData = snap.data() as Landlord;
+        landlordOwnerMap.set(ll.landlordId, existingData.ownerUid);
+        newlySyncedIds.push(ll.landlordId);
+        continue;
+      }
+      const safeFront = sanitizeImageSrc(ll.idFrontImage);
+      const safeBack = sanitizeImageSrc(ll.idBackImage);
+      if (!safeFront || !safeBack || safeFront.length > 350000 || safeBack.length > 350000) {
+        continue;
+      }
+      const resolvedOwnerUid =
+        !params.isPolice || !ll.ownerUid || ll.ownerUid.startsWith('lluid_') || ll.ownerUid === 'fallback-admin'
+          ? params.uid
+          : ll.ownerUid;
+
+      await setDoc(ref, {
+        landlordId: ll.landlordId,
+        ownerUid: resolvedOwnerUid,
+        fullName: ll.fullName.slice(0, 150),
+        phone: ll.phone.slice(0, 30),
+        region: (ll.region || DEFAULT_REGION_NAME).slice(0, 100),
+        zone: (ll.zone || inferZoneForCity(ll.city)).slice(0, 100),
+        city: ll.city.slice(0, 100),
+        woreda: ll.woreda.slice(0, 100),
+        kebele: ll.kebele.slice(0, 100),
+        houseNumber: ll.houseNumber.slice(0, 60),
+        roomCount: Math.max(1, Math.min(500, Math.floor(ll.roomCount || 1))),
+        faydaId: ll.faydaId.slice(0, 60),
+        idFrontImage: safeFront,
+        idBackImage: safeBack,
+        passwordHash: ll.passwordHash,
+        passwordSalt: ll.passwordSalt,
+        status: ll.status || 'active',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      landlordOwnerMap.set(ll.landlordId, resolvedOwnerUid);
+      newlySyncedIds.push(ll.landlordId);
+      syncedCount++;
+    } catch {
+      // Defer retry
+    }
+  }
+
+  // Sync Tenants linked to Firestore landlords
+  for (const ten of store.tenants) {
+    if (syncedSet.has(ten.tenantId)) continue;
+    try {
+      const ref = doc(db, 'tenants', ten.tenantId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        newlySyncedIds.push(ten.tenantId);
+        continue;
+      }
+      const llSnap = await getDoc(doc(db, 'landlords', ten.landlordId));
+      if (!llSnap.exists()) continue;
+      const llOwnerUid = (llSnap.data() as Landlord).ownerUid;
+      if (!params.isPolice && llOwnerUid !== params.uid) continue;
+
+      const safeFront = sanitizeImageSrc(ten.idFrontImage);
+      const safeBack = sanitizeImageSrc(ten.idBackImage);
+      if (!safeFront || !safeBack || safeFront.length > 350000 || safeBack.length > 350000) {
+        continue;
+      }
+      const payload: Record<string, unknown> = {
+        tenantId: ten.tenantId,
+        landlordId: ten.landlordId,
+        landlordUid: llOwnerUid,
+        landlordName: ten.landlordName.slice(0, 150),
+        landlordPhone: ten.landlordPhone.slice(0, 30),
+        region: (ten.region || DEFAULT_REGION_NAME).slice(0, 100),
+        zone: (ten.zone || inferZoneForCity(ten.city)).slice(0, 100),
+        city: ten.city.slice(0, 100),
+        woreda: ten.woreda.slice(0, 100),
+        kebele: ten.kebele.slice(0, 100),
+        houseNumber: ten.houseNumber.slice(0, 60),
+        roomLabel: (ten.roomLabel || 'ክፍል 1').slice(0, 60),
+        fullName: ten.fullName.slice(0, 150),
+        phone: ten.phone.slice(0, 30),
+        maritalStatus: ten.maritalStatus,
+        livingArrangement: ten.livingArrangement,
+        coResidents: Array.isArray(ten.coResidents) ? ten.coResidents.slice(0, 20) : [],
+        occupation: ten.occupation.slice(0, 120),
+        isPoliceTenant: Boolean(ten.isPoliceTenant),
+        idType: ten.isPoliceTenant ? 'police_digital' : 'fayda',
+        idNumber: ten.idNumber.slice(0, 60),
+        idFrontImage: safeFront,
+        idBackImage: safeBack,
+        moveInDate: ten.moveInDate.slice(0, 30),
+        status: ten.status || 'active',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      const safePortrait = ten.portraitImage ? sanitizeImageSrc(ten.portraitImage) : '';
+      if (safePortrait && safePortrait.length <= 350000) {
+        payload.portraitImage = safePortrait;
+      }
+      if (ten.replacedTenantId) payload.replacedTenantId = ten.replacedTenantId;
+      if (ten.replacedTenantName) payload.replacedTenantName = ten.replacedTenantName.slice(0, 150);
+
+      await setDoc(ref, payload);
+      newlySyncedIds.push(ten.tenantId);
+      syncedCount++;
+    } catch {
+      // Defer retry
+    }
+  }
+
+  if (params.isPolice) {
+    for (const w of store.wantedPersons) {
+      if (syncedSet.has(w.wantedId)) continue;
+      try {
+        const ref = doc(db, 'wanted_persons', w.wantedId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          const payload: Record<string, unknown> = {
+            wantedId: w.wantedId,
+            fullName: w.fullName.slice(0, 150),
+            phone: w.phone.slice(0, 30),
+            faydaId: w.faydaId.slice(0, 60),
+            reason: w.reason.slice(0, 1000),
+            caseNumber: w.caseNumber.slice(0, 80),
+            priority: w.priority,
+            status: w.status || 'active',
+            reportedByName: w.reportedByName.slice(0, 150),
+            createdByUid: params.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+          const safePhoto = w.photoImage ? sanitizeImageSrc(w.photoImage) : '';
+          if (safePhoto && safePhoto.length <= 350000) {
+            payload.photoImage = safePhoto;
+          }
+          if (w.reportedByOfficerId) payload.reportedByOfficerId = w.reportedByOfficerId;
+          await setDoc(ref, payload);
+          syncedCount++;
+        }
+        newlySyncedIds.push(w.wantedId);
+      } catch {
+        // Defer retry
+      }
+    }
+
+    for (const cr of store.criminalRecords) {
+      if (syncedSet.has(cr.recordId)) continue;
+      try {
+        const ref = doc(db, 'criminal_records', cr.recordId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          const payload: Record<string, unknown> = {
+            recordId: cr.recordId,
+            personName: cr.personName.slice(0, 150),
+            recordType: cr.recordType,
+            offenseTitle: cr.offenseTitle.slice(0, 200),
+            description: cr.description.slice(0, 2000),
+            city: cr.city.slice(0, 100),
+            woreda: cr.woreda.slice(0, 100),
+            kebele: cr.kebele.slice(0, 100),
+            stationName: cr.stationName.slice(0, 150),
+            incidentDate: cr.incidentDate.slice(0, 30),
+            recordedByName: cr.recordedByName.slice(0, 150),
+            createdByUid: params.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+          if (cr.phone) payload.phone = cr.phone.slice(0, 30);
+          if (cr.faydaId) payload.faydaId = cr.faydaId.slice(0, 60);
+          const safePhoto = cr.photoImage ? sanitizeImageSrc(cr.photoImage) : '';
+          if (safePhoto && safePhoto.length <= 350000) {
+            payload.photoImage = safePhoto;
+          }
+          if (cr.recordedByOfficerId) payload.recordedByOfficerId = cr.recordedByOfficerId;
+          await setDoc(ref, payload);
+          syncedCount++;
+        }
+        newlySyncedIds.push(cr.recordId);
+      } catch {
+        // Defer retry
+      }
+    }
+  }
+
+  if (newlySyncedIds.length > 0) {
+    await markFallbackIdsSynced(newlySyncedIds);
+  }
+  return { syncedCount };
 }

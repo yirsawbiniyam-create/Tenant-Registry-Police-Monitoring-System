@@ -4,11 +4,15 @@ import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firesto
 import {
   ArrowLeft,
   Building2,
+  Check,
+  Cloud,
+  Copy,
   Eye,
   EyeOff,
   Globe,
   Lock,
-  Upload,
+  LogIn,
+  RefreshCw,
   UserPlus,
 } from 'lucide-react';
 import { db, ROOT_ADMIN_EMAIL } from '../firebase';
@@ -20,40 +24,53 @@ import type {
   PoliceOfficer,
 } from '../types';
 import {
-  compressImageFile,
   normalizePhone,
-  sanitizeImageSrc,
+  phonesMatch,
   verifyPassword,
 } from '../utils/crypto';
-import { ensureAdminCredentialsSeeded, registerLandlord } from '../services/firestoreService';
 import {
-  DEFAULT_ETHIOPIAN_FLAG_PATH,
-  DEFAULT_REGIONAL_FLAG_PATH,
+  ensureAdminCredentialsSeeded,
+  registerLandlord,
+  syncFallbackRecordsToCloud,
+} from '../services/firestoreService';
+import { registerFallbackLandlord, verifyFallbackLogin } from '../utils/localFallback';
+import {
+  FIREBASE_PROJECT_ID,
+  getHostnamesToAuthorize,
+} from '../utils/domainConfig';
+import {
+  DEFAULT_REGION_NAME,
   LOGIN_SEA_MOUNTAINS_BG_PATH,
+  inferZoneForCity,
   resolveEthiopianFlagSrc,
   resolveRegionalFlagSrc,
 } from '../utils/seedData';
 import { BrandingImage } from './BrandingImage';
+import { SmartPhotoInput } from './SmartPhotoInput';
 import { DICT, type Lang } from '../i18n';
 
-const MetallicFlagpole: React.FC<{ side: 'left' | 'right' }> = ({ side }) => {
-  const gradId = side === 'left' ? 'chromeMastL' : 'chromeMastR';
-  const goldId = side === 'left' ? 'goldFinialL' : 'goldFinialR';
-  const darkId = side === 'left' ? 'steelBaseL' : 'steelBaseR';
+const MetallicFlagpole: React.FC<{ idPrefix: string; flipHalyard?: boolean }> = ({
+  idPrefix,
+  flipHalyard = false,
+}) => {
+  const gradId = `chromeMast_${idPrefix}`;
+  const goldId = `goldFinial_${idPrefix}`;
+  const darkId = `steelBase_${idPrefix}`;
+  const waterId = `seaRipple_${idPrefix}`;
 
   return (
     <svg
-      viewBox="0 0 40 260"
+      viewBox="0 0 72 520"
       aria-hidden="true"
-      className="w-6 h-36 sm:w-9 sm:h-60 shrink-0 drop-shadow-[0_4px_10px_rgba(0,0,0,0.65)]"
+      className="w-10 h-60 sm:w-14 sm:h-[420px] md:h-[490px] shrink-0 drop-shadow-[0_8px_16px_rgba(0,0,0,0.8)]"
     >
       <defs>
         <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#334155" />
-          <stop offset="22%" stopColor="#cbd5e1" />
+          <stop offset="0%" stopColor="#1e293b" />
+          <stop offset="20%" stopColor="#cbd5e1" />
           <stop offset="45%" stopColor="#ffffff" />
-          <stop offset="70%" stopColor="#94a3b8" />
-          <stop offset="100%" stopColor="#1e293b" />
+          <stop offset="72%" stopColor="#94a3b8" />
+          <stop offset="100%" stopColor="#0f172a" />
         </linearGradient>
         <linearGradient id={goldId} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#fef9c3" />
@@ -62,74 +79,124 @@ const MetallicFlagpole: React.FC<{ side: 'left' | 'right' }> = ({ side }) => {
           <stop offset="100%" stopColor="#713f12" />
         </linearGradient>
         <linearGradient id={darkId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#1e293b" />
-          <stop offset="50%" stopColor="#94a3b8" />
-          <stop offset="100%" stopColor="#0f172a" />
+          <stop offset="0%" stopColor="#0f172a" />
+          <stop offset="50%" stopColor="#64748b" />
+          <stop offset="100%" stopColor="#020617" />
         </linearGradient>
+        <radialGradient id={waterId} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.65" />
+          <stop offset="60%" stopColor="#0284c7" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="#0369a1" stopOpacity="0" />
+        </radialGradient>
       </defs>
 
-      {/* Mountain-summit rock contact shadow */}
-      <ellipse cx="20" cy="252" rx="14" ry="4" fill="#020617" fillOpacity="0.55" />
-
-      {/* Heavy bolted steel anchor pedestal */}
-      <path d="M 8 251 L 32 251 L 29 243 L 11 243 Z" fill={`url(#${darkId})`} stroke="#cbd5e1" strokeWidth="0.6" />
-      <rect x="13" y="236" width="14" height="7" rx="1.5" fill={`url(#${gradId})`} stroke="#334155" strokeWidth="0.5" />
-      <circle cx="12" cy="248" r="1.2" fill="#e2e8f0" />
-      <circle cx="28" cy="248" r="1.2" fill="#e2e8f0" />
-
-      {/* Tapered brushed stainless-steel mast */}
-      <polygon
-        points="17.4,28 22.6,28 24.4,236 15.6,236"
-        fill={`url(#${gradId})`}
+      {/* Concentric Ocean / Sea Surface Ripples around the underwater steel foundation */}
+      <ellipse cx="36" cy="498" rx="34" ry="12" fill={`url(#${waterId})`} />
+      <ellipse
+        cx="36"
+        cy="498"
+        rx="29"
+        ry="9"
+        fill="none"
+        stroke="#7dd3fc"
+        strokeWidth="1.2"
+        strokeOpacity="0.55"
+      />
+      <ellipse
+        cx="36"
+        cy="498"
+        rx="20"
+        ry="5.5"
+        fill="none"
+        stroke="#bae6fd"
+        strokeWidth="1.4"
+        strokeOpacity="0.7"
       />
 
-      {/* Structural steel joint collars */}
-      <rect x="16.2" y="166" width="7.6" height="3.2" rx="1" fill={`url(#${darkId})`} />
-      <rect x="16.7" y="98" width="6.6" height="3" rx="1" fill={`url(#${darkId})`} />
+      {/* Heavy Marine Steel Pier Base rising directly out of the sea */}
+      <path
+        d="M 18 498 L 54 498 L 49 480 L 23 480 Z"
+        fill={`url(#${darkId})`}
+        stroke="#94a3b8"
+        strokeWidth="0.9"
+      />
+      <rect
+        x="24.5"
+        y="466"
+        width="23"
+        height="14"
+        rx="2"
+        fill={`url(#${gradId})`}
+        stroke="#334155"
+        strokeWidth="0.8"
+      />
+      <circle cx="25.5" cy="489" r="1.8" fill="#cbd5e1" />
+      <circle cx="36" cy="489" r="1.8" fill="#cbd5e1" />
+      <circle cx="46.5" cy="489" r="1.8" fill="#cbd5e1" />
 
-      {/* Steel rope cleat & braided metallic halyard */}
+      {/* Tall Heavy-Gauge Brushed Stainless Steel Mast */}
+      <polygon points="31.5,38 40.5,38 44,466 28,466" fill={`url(#${gradId})`} />
+
+      {/* Reinforced Structural Steel Flange Collars along the tall pole */}
+      <rect x="28.5" y="362" width="15" height="5" rx="1.5" fill={`url(#${darkId})`} stroke="#94a3b8" strokeWidth="0.4" />
+      <rect x="29.5" y="255" width="13" height="5" rx="1.5" fill={`url(#${darkId})`} stroke="#94a3b8" strokeWidth="0.4" />
+      <rect x="30.2" y="148" width="11.6" height="4.5" rx="1.5" fill={`url(#${darkId})`} stroke="#94a3b8" strokeWidth="0.4" />
+
+      {/* Metallic Halyard Cable + Marine Cleat */}
       <line
-        x1={side === 'left' ? 23.2 : 16.8}
-        y1="30"
-        x2={side === 'left' ? 24.5 : 15.5}
-        y2="205"
-        stroke="#f1f5f9"
-        strokeWidth="1.1"
-        strokeDasharray="2 0.6"
-        strokeOpacity="0.88"
+        x1={flipHalyard ? 28.5 : 43.5}
+        y1="42"
+        x2={flipHalyard ? 26.5 : 45.5}
+        y2="425"
+        stroke="#e2e8f0"
+        strokeWidth="1.3"
+        strokeDasharray="3 1"
+        strokeOpacity="0.92"
       />
       <path
-        d={side === 'left' ? 'M 22 198 L 28 202 L 22 206' : 'M 18 198 L 12 202 L 18 206'}
+        d={flipHalyard ? 'M 30 416 L 21 422 L 30 428' : 'M 42 416 L 51 422 L 42 428'}
         fill="none"
         stroke="#cbd5e1"
-        strokeWidth="1.8"
+        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
 
-      {/* Gold pulley truck collar + top clasp rings */}
-      <rect x="15.5" y="26" width="9" height="4.5" rx="1.5" fill={`url(#${goldId})`} />
+      {/* Gold Pulley Crown & Flag Hoist Rings */}
+      <rect x="29.5" y="34" width="13" height="6" rx="2" fill={`url(#${goldId})`} />
       <circle
-        cx={side === 'left' ? 24 : 16}
-        cy="39"
-        r="2.4"
+        cx={flipHalyard ? 28.5 : 43.5}
+        cy="54"
+        r="3"
         fill="none"
         stroke={`url(#${goldId})`}
-        strokeWidth="1.4"
+        strokeWidth="1.6"
       />
       <circle
-        cx={side === 'left' ? 24 : 16}
-        cy="104"
-        r="2.4"
+        cx={flipHalyard ? 28.5 : 43.5}
+        cy="176"
+        r="3"
         fill="none"
         stroke={`url(#${goldId})`}
-        strokeWidth="1.4"
+        strokeWidth="1.6"
       />
 
-      {/* Ornate gold spear-and-orb finial at peak */}
-      <circle cx="20" cy="19" r="5.5" fill={`url(#${goldId})`} stroke="#fef9c3" strokeWidth="0.6" />
-      <polygon points="20,2 23.8,14 16.2,14" fill={`url(#${goldId})`} stroke="#fef08a" strokeWidth="0.5" />
-      <circle cx="18.3" cy="17.2" r="1.4" fill="#ffffff" fillOpacity="0.7" />
+      {/* Ornate Gold Orb & Spear Finial at Summit */}
+      <circle
+        cx="36"
+        cy="25"
+        r="7.2"
+        fill={`url(#${goldId})`}
+        stroke="#fef9c3"
+        strokeWidth="0.8"
+      />
+      <polygon
+        points="36,3 41.5,18.5 30.5,18.5"
+        fill={`url(#${goldId})`}
+        stroke="#fef08a"
+        strokeWidth="0.6"
+      />
+      <circle cx="33.8" cy="22.8" r="1.9" fill="#ffffff" fillOpacity="0.75" />
     </svg>
   );
 };
@@ -140,11 +207,23 @@ interface LoginPortalProps {
   firebaseUser: User | null;
   isFirebaseAdmin: boolean;
   isFirebasePolice: boolean;
+  domainFallbackActive: boolean;
   branding: BrandingSetting;
   jurisdictions: Jurisdiction[];
-  onSignInGoogle: () => Promise<{ ok: boolean; user?: User; error?: string }>;
+  onSignInGoogle: () => Promise<{
+    ok: boolean;
+    user?: User;
+    unauthorizedDomain?: boolean;
+    error?: string;
+  }>;
+  onRetryCloudConnect?: () => Promise<{
+    ok: boolean;
+    user?: User;
+    unauthorizedDomain?: boolean;
+    error?: string;
+  }>;
   onSignOutGoogle: () => Promise<void>;
-  onEnterSession: (session: ActivePortalSession) => void;
+  onEnterSession: (session: ActivePortalSession, localFallbackUserUid?: string) => void;
 }
 
 type AuthMode = 'login' | 'register';
@@ -155,9 +234,12 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   firebaseUser,
   isFirebaseAdmin,
   isFirebasePolice,
+  domainFallbackActive,
   branding,
   jurisdictions,
   onSignInGoogle,
+  onRetryCloudConnect,
+  onSignOutGoogle,
   onEnterSession,
 }) => {
   const t = DICT[lang];
@@ -165,6 +247,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [showDomainGuide, setShowDomainGuide] = useState(false);
+  const [copiedHost, setCopiedHost] = useState('');
 
   // Unified Single-Row Login State + Brute-Force Protection
   const [identifier, setIdentifier] = useState('');
@@ -208,9 +292,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     }
   }
 
-  // Landlord Self-Registration State
+  // Landlord Self-Registration State (Region -> Zone -> City -> Woreda -> Kebele)
   const [regName, setRegName] = useState('');
   const [regPhone, setRegPhone] = useState('');
+  const [regRegion, setRegRegion] = useState(DEFAULT_REGION_NAME);
+  const [regZone, setRegZone] = useState('');
   const [regCity, setRegCity] = useState('');
   const [regWoreda, setRegWoreda] = useState('');
   const [regKebele, setRegKebele] = useState('');
@@ -222,9 +308,47 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
 
-  const cities = useMemo(
-    () => Array.from(new Set(jurisdictions.map((j) => j.city))),
+  const regions = useMemo(
+    () =>
+      Array.from(
+        new Set(jurisdictions.map((j) => (j.region || DEFAULT_REGION_NAME).trim()).filter(Boolean))
+      ),
     [jurisdictions]
+  );
+
+  useEffect(() => {
+    if (regions.length > 0 && !regions.includes(regRegion)) {
+      setRegRegion(regions[0]);
+    }
+  }, [regions, regRegion]);
+
+  const zones = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          jurisdictions
+            .filter((j) => !regRegion || (j.region || DEFAULT_REGION_NAME) === regRegion)
+            .map((j) => (j.zone || inferZoneForCity(j.city)).trim())
+            .filter(Boolean)
+        )
+      ),
+    [jurisdictions, regRegion]
+  );
+
+  const cities = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          jurisdictions
+            .filter(
+              (j) =>
+                (!regRegion || (j.region || DEFAULT_REGION_NAME) === regRegion) &&
+                (!regZone || (j.zone || inferZoneForCity(j.city)) === regZone)
+            )
+            .map((j) => j.city)
+        )
+      ),
+    [jurisdictions, regRegion, regZone]
   );
 
   const woredas = useMemo(
@@ -232,11 +356,16 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       Array.from(
         new Set(
           jurisdictions
-            .filter((j) => !regCity || j.city === regCity)
+            .filter(
+              (j) =>
+                (!regRegion || (j.region || DEFAULT_REGION_NAME) === regRegion) &&
+                (!regZone || (j.zone || inferZoneForCity(j.city)) === regZone) &&
+                (!regCity || j.city === regCity)
+            )
             .map((j) => j.woreda)
         )
       ),
-    [jurisdictions, regCity]
+    [jurisdictions, regRegion, regZone, regCity]
   );
 
   const kebeles = useMemo(
@@ -244,25 +373,26 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       Array.from(
         new Set(
           jurisdictions
-            .filter((j) => (!regCity || j.city === regCity) && (!regWoreda || j.woreda === regWoreda))
+            .filter(
+              (j) =>
+                (!regRegion || (j.region || DEFAULT_REGION_NAME) === regRegion) &&
+                (!regZone || (j.zone || inferZoneForCity(j.city)) === regZone) &&
+                (!regCity || j.city === regCity) &&
+                (!regWoreda || j.woreda === regWoreda)
+            )
             .map((j) => j.kebele)
         )
       ),
-    [jurisdictions, regCity, regWoreda]
+    [jurisdictions, regRegion, regZone, regCity, regWoreda]
   );
 
-  async function handleFileSelect(
-    e: React.ChangeEvent<HTMLInputElement>,
-    setter: (val: string) => void
-  ) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setErrorMsg('');
+  function handleCopyHost(host: string) {
     try {
-      const compressed = await compressImageFile(file, 760, 0.68, 250000);
-      setter(compressed);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'ምስሉን ማስገባት አልተቻለም');
+      void navigator.clipboard?.writeText(host);
+      setCopiedHost(host);
+      window.setTimeout(() => setCopiedHost(''), 2000);
+    } catch {
+      // Ignore clipboard failure
     }
   }
 
@@ -289,6 +419,35 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     return { isAdmin, isPolice };
   }
 
+  async function attemptFallbackSignIn(rawId: string, pass: string) {
+    const fb = await verifyFallbackLogin(rawId, pass);
+    if (fb.ok) {
+      setFailedAttempts(0);
+      setLockoutUntilMs(0);
+      onEnterSession(fb.session, fb.uid);
+      return;
+    }
+    if (fb.reason === 'suspended') {
+      setErrorMsg(
+        lang === 'am'
+          ? 'ይህ የፖሊስ መለያ ታግዷል። እባክዎ አድሚንን ያነጋግሩ።'
+          : 'This police account is suspended.'
+      );
+      return;
+    }
+    if (fb.reason === 'invalid_password') {
+      registerFailedLoginAttempt(
+        lang === 'am' ? 'የገባው የይለፍ ቃል ትክክል አይደለም።' : 'Incorrect password.'
+      );
+      return;
+    }
+    registerFailedLoginAttempt(
+      lang === 'am'
+        ? 'በዚህ ዩዘርኔም ወይም ስልክ ቁጥር የተመዘገበ መለያ አልተገኘም። አዲስ አከራይ ከሆኑ መጀመሪያ ይመዝገቡ።'
+        : 'No matching account found. If you are a new landlord, please register first.'
+    );
+  }
+
   async function handleUnifiedLogin(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg('');
@@ -313,9 +472,19 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
     setBusy(true);
     try {
+      // If domainFallbackActive is already detected from auth/unauthorized-domain, authenticate directly
+      if (domainFallbackActive && (!firebaseUser || !firebaseUser.emailVerified)) {
+        await attemptFallbackSignIn(rawId, password);
+        return;
+      }
+
       let activeUser = firebaseUser;
       if (!activeUser || !activeUser.emailVerified) {
         const res = await onSignInGoogle();
+        if (res.unauthorizedDomain) {
+          await attemptFallbackSignIn(rawId, password);
+          return;
+        }
         if (!res.ok || !res.user) {
           setErrorMsg(
             res.error ||
@@ -386,17 +555,17 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         }
       }
 
-      // 3. Check Landlord Credentials (by phone / username)
+      // 3. Check Landlord Credentials (by phone / username across +251 / 09 / 9 formatting)
       const phone = normalizePhone(rawId);
       if (phone) {
         const landlordSnap = await getDocs(
           isPolice
-            ? query(collection(db, 'landlords'), where('phone', '==', phone))
+            ? collection(db, 'landlords')
             : query(collection(db, 'landlords'), where('ownerUid', '==', activeUser.uid))
         );
         const candidates = landlordSnap.docs
           .map((d) => d.data() as Landlord)
-          .filter((l) => normalizePhone(l.phone) === phone && l.status === 'active');
+          .filter((l) => phonesMatch(l.phone, rawId) && l.status === 'active');
 
         for (const landlord of candidates) {
           const ok = await verifyPassword(password, landlord.passwordSalt, landlord.passwordHash);
@@ -415,11 +584,38 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
           );
           return;
         }
+
+        // Check fallback store if user registered earlier on an unauthorized domain and just connected Google
+        const fbCheck = await verifyFallbackLogin(rawId, password);
+        if (fbCheck.ok && fbCheck.session.role === 'landlord') {
+          await syncFallbackRecordsToCloud({
+            uid: activeUser.uid,
+            isAdmin,
+            isPolice,
+          }).catch(() => undefined);
+          setFailedAttempts(0);
+          setLockoutUntilMs(0);
+          onEnterSession({
+            role: 'landlord',
+            landlord: { ...fbCheck.session.landlord, ownerUid: activeUser.uid },
+          });
+          return;
+        }
+        if (fbCheck.ok === false && fbCheck.reason === 'invalid_password') {
+          registerFailedLoginAttempt(
+            lang === 'am' ? 'የገባው የይለፍ ቃል ትክክል አይደለም።' : 'Incorrect password.'
+          );
+          return;
+        }
       }
 
-      // 4. Fallback if someone typed a non-phone username (like 'admin' or police username) under a different browser session
+      // 4. Fallback if someone typed 'admin' under a different signed-in email
       if (!isAdmin && rawId === 'admin') {
         const reauth = await onSignInGoogle();
+        if (reauth.unauthorizedDomain) {
+          await attemptFallbackSignIn(rawId, password);
+          return;
+        }
         if (reauth.ok && reauth.user) {
           const nextPrivs = await resolveAccountPrivileges(reauth.user);
           isAdmin = nextPrivs.isAdmin;
@@ -462,6 +658,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     if (
       !regName.trim() ||
       !regPhone.trim() ||
+      !regRegion ||
+      !regZone ||
       !regCity ||
       !regWoreda ||
       !regKebele ||
@@ -473,8 +671,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     ) {
       setErrorMsg(
         lang === 'am'
-          ? 'እባክዎ ሁሉንም አስፈላጊ መረጃዎች እና የፋይዳ መታወቂያ የፊትና የኋላ ፎቶዎች ይሙሉ።'
-          : 'Please complete all required fields and upload both front and back Fayda ID photos.'
+          ? 'እባክዎ ክልል፣ ዞን፣ ከተማ፣ ወረዳ፣ ቀበሌ እና የፋይዳ መታወቂያ ፎቶዎችን ጨምሮ ሁሉንም ይሙሉ።'
+          : 'Please complete region, zone, city, woreda, kebele, all required fields, and Fayda ID photos.'
       );
       return;
     }
@@ -496,10 +694,13 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
     setBusy(true);
     try {
+      let useFallback = domainFallbackActive && (!firebaseUser || !firebaseUser.emailVerified);
       let activeUser = firebaseUser;
-      if (!activeUser || !activeUser.emailVerified) {
+      if (!useFallback && (!activeUser || !activeUser.emailVerified)) {
         const res = await onSignInGoogle();
-        if (!res.ok || !res.user) {
+        if (res.unauthorizedDomain) {
+          useFallback = true;
+        } else if (!res.ok || !res.user) {
           setErrorMsg(
             res.error ||
               (lang === 'am'
@@ -507,23 +708,45 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 : 'Could not complete registration. Please try again.')
           );
           return;
+        } else {
+          activeUser = res.user;
         }
-        activeUser = res.user;
       }
 
-      await registerLandlord(activeUser.uid, {
-        fullName: regName,
-        phone: regPhone,
-        city: regCity,
-        woreda: regWoreda,
-        kebele: regKebele,
-        houseNumber: regHouseNo,
-        roomCount: Number(regRoomCount) || 1,
-        faydaId: regFaydaId,
-        idFrontImage: regIdFront,
-        idBackImage: regIdBack,
-        password: regPassword,
-      });
+      if (useFallback) {
+        await registerFallbackLandlord('', {
+          fullName: regName,
+          phone: regPhone,
+          region: regRegion,
+          zone: regZone,
+          city: regCity,
+          woreda: regWoreda,
+          kebele: regKebele,
+          houseNumber: regHouseNo,
+          roomCount: Number(regRoomCount) || 1,
+          faydaId: regFaydaId,
+          idFrontImage: regIdFront,
+          idBackImage: regIdBack,
+          password: regPassword,
+        });
+      } else if (activeUser) {
+        await registerLandlord(activeUser.uid, {
+          fullName: regName,
+          phone: regPhone,
+          region: regRegion,
+          zone: regZone,
+          city: regCity,
+          woreda: regWoreda,
+          kebele: regKebele,
+          houseNumber: regHouseNo,
+          roomCount: Number(regRoomCount) || 1,
+          faydaId: regFaydaId,
+          idFrontImage: regIdFront,
+          idBackImage: regIdBack,
+          password: regPassword,
+        });
+      }
+
       setIdentifier(regPhone);
       setPassword('');
       setRegName('');
@@ -549,116 +772,150 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
   const regionalFlagSrc = resolveRegionalFlagSrc(branding.regionalFlagDataUrl);
   const ethiopianFlagSrc = resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl);
-  const isDefaultEthiopianSvg = ethiopianFlagSrc === DEFAULT_ETHIOPIAN_FLAG_PATH;
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-between py-3 px-3 sm:py-6 sm:px-6 relative overflow-hidden">
-      {/* FULL-LOGIN SCENIC SEA & MOUNTAIN PEAKS WATERMARK BACKDROP */}
+      {/* FULL-LOGIN SCENIC SEA WATERMARK & SEA-PLANTED MONUMENTAL FLAGPOLES */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0 overflow-hidden select-none"
       >
-        {/* Serene Deep-Blue Sea & Left/Right Mountain Peaks Landscape */}
+        {/* Serene Deep-Blue Sea & Mountains Landscape */}
         <img
           src={LOGIN_SEA_MOUNTAINS_BG_PATH}
           alt=""
           referrerPolicy="no-referrer"
-          className="w-full h-full object-cover object-center scale-[1.02]"
+          className="w-full h-full object-cover object-center scale-[1.01]"
         />
 
-        {/* Light atmospheric veil only at extreme edges to keep text legible without hiding the scenery */}
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/25 via-transparent to-slate-950/40" />
+        {/* Subtle translucent atmosphere veil so watermarks, sea flags & colored typography stay clear */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/35 via-slate-950/10 to-slate-950/45" />
 
-        {/* LEFT MOUNTAIN PEAK BRUSHED-STEEL FLAGPOLE: Benishangul-Gumuz Regional Flag (Main Background Behind Flag) */}
-        <div className="absolute left-[2%] sm:left-[9%] top-[4%] sm:top-[6%] flex items-start">
-          <MetallicFlagpole side="left" />
-          <div className="mt-5 sm:mt-8 -ml-2.5 sm:-ml-3.5 origin-left animate-flag-breeze">
+        {/* LEFT SEA-PLANTED TALL STEEL POLE: Admin-Configured Regional Flag */}
+        <div className="absolute left-[1%] sm:left-[4%] md:left-[7%] bottom-[5%] sm:bottom-[6%] flex items-start">
+          <MetallicFlagpole idPrefix="leftSeaPole" />
+          <div className="mt-6 sm:mt-11 -ml-3 sm:-ml-4 origin-left animate-flag-breeze">
             <BrandingImage
               src={regionalFlagSrc}
               alt="Benishangul-Gumuz Regional Flag"
-              className="w-24 h-15 sm:w-44 sm:h-28 object-contain drop-shadow-[0_12px_18px_rgba(0,0,0,0.48)]"
+              className="w-20 h-13 sm:w-44 sm:h-28 md:w-52 md:h-32 object-contain drop-shadow-[0_12px_22px_rgba(0,0,0,0.65)]"
             />
           </div>
         </div>
 
-        {/* RIGHT MOUNTAIN PEAK BRUSHED-STEEL FLAGPOLE: Ethiopian National Flag (Main Background Behind Flag) */}
-        <div className="absolute right-[2%] sm:right-[6%] top-[4%] sm:top-[6%] flex flex-row-reverse items-start">
-          <MetallicFlagpole side="right" />
-          <div className="mt-5 sm:mt-8 -mr-2.5 sm:-mr-3.5 origin-right animate-flag-breeze">
+        {/* RIGHT SEA-PLANTED TALL STEEL POLE: Admin-Configured Ethiopian Flag (Upright un-mirrored) */}
+        <div className="absolute right-[1%] sm:right-[4%] md:right-[7%] bottom-[5%] sm:bottom-[6%] flex flex-row-reverse items-start">
+          <MetallicFlagpole idPrefix="rightSeaPole" flipHalyard />
+          <div className="mt-6 sm:mt-11 -mr-3 sm:-mr-4 origin-right animate-flag-breeze">
             <BrandingImage
               src={ethiopianFlagSrc}
               alt="Ethiopian National Flag"
-              className={`w-24 h-15 sm:w-44 sm:h-28 object-contain drop-shadow-[0_12px_18px_rgba(0,0,0,0.48)] ${
-                isDefaultEthiopianSvg ? '-scale-x-100' : ''
-              }`}
+              className="w-20 h-13 sm:w-44 sm:h-28 md:w-52 md:h-32 object-contain drop-shadow-[0_12px_22px_rgba(0,0,0,0.65)]"
             />
           </div>
         </div>
 
         {/* CENTER SEA-FLOATING POLICE LOGO WATERMARK */}
-        <div className="absolute inset-0 flex items-center justify-center translate-y-6 sm:translate-y-10">
+        <div className="absolute inset-0 flex items-center justify-center translate-y-8 sm:translate-y-12">
           <div className="relative flex flex-col items-center animate-sea-float">
             <div className="absolute inset-0 -m-6 sm:-m-10 rounded-full bg-cyan-300/20 blur-2xl" />
             <BrandingImage
               src={branding.logoDataUrl}
               alt=""
-              className="relative w-60 h-60 sm:w-[400px] sm:h-[400px] rounded-full object-cover opacity-50 ring-4 ring-amber-200/40 shadow-[0_0_90px_rgba(56,189,248,0.45)]"
+              className="relative w-56 h-56 sm:w-[380px] sm:h-[380px] rounded-full object-cover opacity-45 ring-4 ring-amber-200/35 shadow-[0_0_90px_rgba(56,189,248,0.45)]"
             />
-            <div className="w-48 sm:w-80 h-5 sm:h-7 mt-3 rounded-full bg-gradient-to-r from-transparent via-cyan-200/40 to-transparent blur-md" />
+            <div className="w-44 sm:w-72 h-5 sm:h-7 mt-3 rounded-full bg-gradient-to-r from-transparent via-cyan-200/40 to-transparent blur-md" />
           </div>
         </div>
       </div>
 
-      <div className="relative z-10 max-w-2xl w-full mx-auto space-y-4 sm:space-y-6 flex-1 flex flex-col justify-between">
+      {/* FOREGROUND CONTENT */}
+      <div className="relative z-10 max-w-xl w-full mx-auto space-y-3.5 sm:space-y-5 flex-1 flex flex-col justify-between pt-2 sm:pt-0">
         {/* Top Language Switcher */}
         <div className="flex justify-end">
           <button
             type="button"
             onClick={onToggleLang}
-            className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg bg-slate-950/30 hover:bg-slate-950/50 backdrop-blur-[2px] text-amber-200 border border-amber-300/40 text-xs font-semibold transition-colors whitespace-nowrap shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg bg-slate-950/55 hover:bg-slate-950/75 backdrop-blur-xs text-cyan-200 border border-cyan-300/50 text-xs font-extrabold transition-colors whitespace-nowrap shadow-sm"
           >
-            <Globe className="w-3.5 h-3.5" />
+            <Globe className="w-3.5 h-3.5 text-amber-300" />
             {t.langToggle}
           </button>
         </div>
 
-        {/* 1. Dynamic Police Logo + 2. Commission Name (Amharic & English) + 3. Large System Title */}
-        <section className="bg-transparent text-white px-2 py-2 sm:px-4 sm:py-3 text-center">
-          <div className="flex flex-col items-center space-y-2.5 sm:space-y-3">
-            <div className="p-1 sm:p-1.5 rounded-full bg-gradient-to-tr from-amber-600 via-amber-300 to-amber-500 shadow-lg">
+        {/* 1. Dynamic Police Logo + Commission Name + Vibrant Bold System Title */}
+        <section className="bg-transparent px-2 py-1 sm:px-4 sm:py-2 text-center">
+          <div className="flex flex-col items-center space-y-2 sm:space-y-2.5">
+            <div className="p-1 sm:p-1.5 rounded-full bg-gradient-to-tr from-amber-500 via-yellow-300 to-emerald-400 shadow-lg">
               <BrandingImage
                 src={branding.logoDataUrl}
                 alt={branding.commissionName}
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover bg-white/95 p-1"
+                className="w-18 h-18 sm:w-24 sm:h-24 rounded-full object-cover bg-white/95 p-1"
               />
             </div>
 
-            <div className="space-y-1">
-              <h2 className="text-lg sm:text-2xl font-bold tracking-tight text-amber-300 drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)]">
-                {branding.commissionName || 'ቤኒሻንጉል ጉሙዝ ፖሊስ ኮሚሽን'}
+            <div className="space-y-0.5 sm:space-y-1">
+              <h2 className="text-base sm:text-2xl font-extrabold tracking-tight text-amber-300 drop-shadow-[0_2px_10px_rgba(0,0,0,0.98)]">
+                {branding.commissionName || 'የቤኒሻንጉል ጉሙዝ ክልል ፖሊስ ኮሚሽን'}
               </h2>
-              <p className="text-[11px] sm:text-sm font-semibold tracking-wider uppercase text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+              <p className="text-[11px] sm:text-sm font-extrabold tracking-wider uppercase text-cyan-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)]">
                 {t.commissionEn}
               </p>
             </div>
 
-            <div className="w-28 sm:w-36 h-px bg-gradient-to-r from-transparent via-amber-300/80 to-transparent" />
+            <div className="w-32 sm:w-44 h-0.5 bg-gradient-to-r from-cyan-400/70 via-amber-300 to-emerald-400/70 rounded-full" />
 
-            <h1 className="text-xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-white drop-shadow-[0_3px_14px_rgba(0,0,0,0.98)] leading-snug text-balance">
-              {t.systemTitle}
-            </h1>
+            <div className="drop-shadow-[0_3px_12px_rgba(2,6,23,0.98)]">
+              <h1 className="text-lg sm:text-3xl md:text-4xl font-black tracking-tight bg-gradient-to-r from-amber-300 via-yellow-200 to-emerald-300 bg-clip-text text-transparent leading-snug text-balance">
+                {t.systemTitle}
+              </h1>
+            </div>
           </div>
         </section>
 
-        {/* 4. Transparent Login & Register Area (does not cover scenic sea/watermark) */}
-        <section className="bg-transparent border border-white/20 rounded-2xl p-4 sm:p-6 space-y-4">
+        {/* 2. Transparent Login & Register Controls (does not obscure scenic sea/watermark/flags) */}
+        <section className="bg-slate-950/25 backdrop-blur-[2px] border border-cyan-300/25 rounded-2xl p-3.5 sm:p-6 space-y-4 shadow-xl">
+          {/* Segmented Login / Register Switch Bar */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-amber-300/25">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setErrorMsg('');
+              }}
+              className={`py-2.5 px-3 min-h-[42px] rounded-lg text-xs sm:text-sm font-extrabold inline-flex items-center justify-center gap-1.5 transition-all ${
+                mode === 'login'
+                  ? 'bg-slate-900 text-amber-300 border border-amber-300/60 shadow'
+                  : 'text-sky-200 hover:text-amber-200 hover:bg-white/10'
+              }`}
+            >
+              <LogIn className="w-4 h-4 shrink-0" />
+              <span className="truncate">{t.loginTab}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('register');
+                setErrorMsg('');
+              }}
+              className={`py-2.5 px-3 min-h-[42px] rounded-lg text-xs sm:text-sm font-extrabold inline-flex items-center justify-center gap-1.5 transition-all ${
+                mode === 'register'
+                  ? 'bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 border border-amber-200 shadow'
+                  : 'text-emerald-200 hover:text-amber-200 hover:bg-white/10'
+              }`}
+            >
+              <UserPlus className="w-4 h-4 shrink-0" />
+              <span className="truncate">{t.registerTab}</span>
+            </button>
+          </div>
+
           {errorMsg && (
-            <div className="p-3.5 bg-red-950/80 border border-red-400/60 rounded-xl text-sm text-red-100 font-medium shadow-md">
+            <div className="p-3.5 bg-red-950/85 border border-red-400/60 rounded-xl text-xs sm:text-sm text-rose-200 font-bold shadow-md">
               {errorMsg}
             </div>
           )}
           {successMsg && (
-            <div className="p-3.5 bg-emerald-950/80 border border-emerald-400/60 rounded-xl text-sm text-emerald-100 font-medium shadow-md">
+            <div className="p-3.5 bg-emerald-950/85 border border-emerald-400/60 rounded-xl text-xs sm:text-sm text-emerald-200 font-bold shadow-md">
               {successMsg}
             </div>
           )}
@@ -668,7 +925,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
             <form onSubmit={handleUnifiedLogin} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.95)] mb-1.5">
+                  <label className="block text-xs font-extrabold text-emerald-300 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.usernameOrPhoneLabel}
                   </label>
                   <input
@@ -678,12 +935,12 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder={t.usernameOrPhonePlaceholder}
-                    className="w-full px-3.5 py-3 min-h-[44px] border border-white/40 rounded-xl text-sm text-white placeholder:text-slate-200/75 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-slate-950/45 focus:bg-slate-950/65 transition-colors"
+                    className="w-full px-3.5 py-3 min-h-[44px] border border-emerald-300/45 rounded-xl text-sm font-bold text-amber-100 placeholder:text-sky-200/70 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-slate-950/55 focus:bg-slate-950/75 transition-colors"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.95)] mb-1.5">
+                  <label className="block text-xs font-extrabold text-sky-300 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.passwordLabel}
                   </label>
                   <div className="relative">
@@ -694,13 +951,13 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={t.passwordPlaceholder}
-                      className="w-full pl-3.5 pr-11 py-3 min-h-[44px] border border-white/40 rounded-xl text-sm text-white placeholder:text-slate-200/75 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-slate-950/45 focus:bg-slate-950/65 transition-colors"
+                      className="w-full pl-3.5 pr-11 py-3 min-h-[44px] border border-sky-300/45 rounded-xl text-sm font-bold text-amber-100 placeholder:text-sky-200/70 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-slate-950/55 focus:bg-slate-950/75 transition-colors"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
                       aria-label="Toggle password visibility"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-amber-200 hover:text-white"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-amber-300 hover:text-cyan-200"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -711,20 +968,20 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               <button
                 type="submit"
                 disabled={busy || remainingLockSeconds > 0}
-                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-slate-900/90 via-blue-950/90 to-slate-900/90 hover:from-slate-800 hover:to-blue-900 border border-amber-300/40 disabled:opacity-60 text-white font-bold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-slate-900/95 via-blue-950/95 to-emerald-950/95 hover:from-slate-800 hover:to-blue-900 border border-amber-300/60 disabled:opacity-60 text-amber-300 font-extrabold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
               >
-                <Lock className="w-4 h-4 text-amber-300" />
+                <Lock className="w-4 h-4 text-emerald-300" />
                 {remainingLockSeconds > 0
-                  ? (lang === 'am'
-                      ? `ተቆልፏል (${remainingLockSeconds} ሰከንድ)`
-                      : `Locked (${remainingLockSeconds}s)`)
+                  ? lang === 'am'
+                    ? `ተቆልፏል (${remainingLockSeconds} ሰከንድ)`
+                    : `Locked (${remainingLockSeconds}s)`
                   : busy
                     ? t.verifyingButton
                     : t.loginButton}
               </button>
 
-              <div className="pt-1 flex flex-col sm:flex-row items-center justify-center gap-2 text-xs text-white text-center">
-                <span className="font-medium drop-shadow-[0_1px_6px_rgba(0,0,0,0.95)]">
+              <div className="pt-1 flex flex-col sm:flex-row items-center justify-center gap-2 text-xs text-center">
+                <span className="font-bold text-cyan-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)]">
                   {t.newLandlordPrompt}
                 </span>
                 <button
@@ -733,7 +990,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     setMode('register');
                     setErrorMsg('');
                   }}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 min-h-[40px] rounded-lg bg-amber-400/90 hover:bg-amber-300 border border-amber-200 text-slate-950 font-bold transition-colors w-full sm:w-auto shadow-md"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 min-h-[40px] rounded-lg bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 border border-amber-200 text-slate-950 font-extrabold transition-colors w-full sm:w-auto shadow-md"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   {t.registerLink}
@@ -745,16 +1002,16 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
           {/* MODE 2: NEW LANDLORD REGISTRATION */}
           {mode === 'register' && (
             <form onSubmit={handleLandlordRegister} className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/25">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-amber-300/25">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-amber-400/90 text-slate-950 flex items-center justify-center shrink-0 shadow">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-300 text-slate-950 flex items-center justify-center shrink-0 shadow">
                     <Building2 className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.95)]">
+                    <h3 className="text-base sm:text-lg font-extrabold text-amber-300 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)]">
                       {t.registerHeading}
                     </h3>
-                    <p className="text-xs text-slate-100 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">
+                    <p className="text-xs font-bold text-cyan-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
                       {t.registerSubtitle}
                     </p>
                   </div>
@@ -765,7 +1022,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     setMode('login');
                     setErrorMsg('');
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950/55 hover:bg-slate-950/75 border border-white/30 text-white text-xs font-semibold transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-lg bg-slate-950/65 hover:bg-slate-950/85 border border-emerald-300/40 text-emerald-300 text-xs font-extrabold transition-colors"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   {t.loginTab}
@@ -774,7 +1031,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-sky-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.fullNameLabel}
                   </label>
                   <input
@@ -784,11 +1041,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regName}
                     onChange={(e) => setRegName(e.target.value)}
                     placeholder={lang === 'am' ? 'ስም / የአባት ስም / የአያት ስም' : 'First / Middle / Last Name'}
-                    className="w-full px-3 py-2.5 border border-white/40 bg-slate-950/45 text-white placeholder:text-slate-200/75 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 border border-sky-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-sky-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.phoneUsernameLabel}
                   </label>
                   <input
@@ -798,14 +1055,69 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regPhone}
                     onChange={(e) => setRegPhone(e.target.value)}
                     placeholder="09..."
-                    className="w-full px-3 py-2.5 border border-white/40 bg-slate-950/45 text-white placeholder:text-slate-200/75 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 border border-sky-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
+                </div>
+              </div>
+
+              {/* 5-Level Cascading Location: Region -> Zone -> City -> Woreda -> Kebele */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                    {t.regionLabel}
+                  </label>
+                  <select
+                    required
+                    value={regRegion}
+                    onChange={(e) => {
+                      setRegRegion(e.target.value);
+                      setRegZone('');
+                      setRegCity('');
+                      setRegWoreda('');
+                      setRegKebele('');
+                    }}
+                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  >
+                    <option value="" className="bg-slate-900 text-amber-200">
+                      {t.selectRegion}
+                    </option>
+                    {regions.map((r) => (
+                      <option key={r} value={r} className="bg-slate-900 text-amber-100">
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                    {t.zoneLabel}
+                  </label>
+                  <select
+                    required
+                    value={regZone}
+                    onChange={(e) => {
+                      setRegZone(e.target.value);
+                      setRegCity('');
+                      setRegWoreda('');
+                      setRegKebele('');
+                    }}
+                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  >
+                    <option value="" className="bg-slate-900 text-amber-200">
+                      {t.selectZone}
+                    </option>
+                    {zones.map((z) => (
+                      <option key={z} value={z} className="bg-slate-900 text-amber-100">
+                        {z}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.cityLabel}
                   </label>
                   <select
@@ -816,20 +1128,20 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       setRegWoreda('');
                       setRegKebele('');
                     }}
-                    className="w-full px-3 py-2.5 border border-white/40 rounded-xl text-sm bg-slate-950/55 text-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
                   >
-                    <option value="" className="bg-slate-900 text-white">
+                    <option value="" className="bg-slate-900 text-amber-200">
                       {t.selectCity}
                     </option>
                     {cities.map((c) => (
-                      <option key={c} value={c} className="bg-slate-900 text-white">
+                      <option key={c} value={c} className="bg-slate-900 text-amber-100">
                         {c}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.woredaLabel}
                   </label>
                   <select
@@ -839,33 +1151,33 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       setRegWoreda(e.target.value);
                       setRegKebele('');
                     }}
-                    className="w-full px-3 py-2.5 border border-white/40 rounded-xl text-sm bg-slate-950/55 text-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
                   >
-                    <option value="" className="bg-slate-900 text-white">
+                    <option value="" className="bg-slate-900 text-amber-200">
                       {t.selectWoreda}
                     </option>
                     {woredas.map((w) => (
-                      <option key={w} value={w} className="bg-slate-900 text-white">
+                      <option key={w} value={w} className="bg-slate-900 text-amber-100">
                         {w}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.kebeleLabel}
                   </label>
                   <select
                     required
                     value={regKebele}
                     onChange={(e) => setRegKebele(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-white/40 rounded-xl text-sm bg-slate-950/55 text-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
                   >
-                    <option value="" className="bg-slate-900 text-white">
+                    <option value="" className="bg-slate-900 text-amber-200">
                       {t.selectKebele}
                     </option>
                     {kebeles.map((k) => (
-                      <option key={k} value={k} className="bg-slate-900 text-white">
+                      <option key={k} value={k} className="bg-slate-900 text-amber-100">
                         {k}
                       </option>
                     ))}
@@ -875,7 +1187,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-emerald-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.houseNoLabel}
                   </label>
                   <input
@@ -885,11 +1197,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regHouseNo}
                     onChange={(e) => setRegHouseNo(e.target.value)}
                     placeholder="104"
-                    className="w-full px-3 py-2.5 border border-white/40 bg-slate-950/45 text-white placeholder:text-slate-200/75 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 border border-emerald-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-emerald-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.roomCountLabel}
                   </label>
                   <input
@@ -899,11 +1211,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     required
                     value={regRoomCount}
                     onChange={(e) => setRegRoomCount(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-white/40 bg-slate-950/45 text-white rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 border border-emerald-300/45 bg-slate-950/55 text-amber-100 font-bold rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-emerald-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.faydaIdLabel}
                   </label>
                   <input
@@ -913,69 +1225,39 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regFaydaId}
                     onChange={(e) => setRegFaydaId(e.target.value)}
                     placeholder="Fayda FIN / FAN"
-                    className="w-full px-3 py-2.5 border border-white/40 bg-slate-950/45 text-white placeholder:text-slate-200/75 rounded-xl text-sm font-mono-tabular focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 border border-emerald-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm font-mono-tabular focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 </div>
               </div>
 
-              {/* Fayda Front & Back Uploads */}
+              {/* Fayda Front & Back Uploads with Camera + Gallery + Auto-Crop */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1.5">
-                    {t.faydaFrontLabel}
-                  </label>
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/45 bg-slate-950/35 rounded-xl p-3 cursor-pointer hover:bg-slate-950/55 transition-colors">
-                    {sanitizeImageSrc(regIdFront) ? (
-                      <img
-                        src={sanitizeImageSrc(regIdFront)}
-                        alt="Fayda Front"
-                        className="h-24 w-full object-contain rounded"
-                      />
-                    ) : (
-                      <div className="flex items-center gap-2 text-xs text-white py-4">
-                        <Upload className="w-4 h-4 text-amber-300" />
-                        <span>{t.uploadFront}</span>
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => void handleFileSelect(e, setRegIdFront)}
-                    />
-                  </label>
-                </div>
+                <SmartPhotoInput
+                  label={t.faydaFrontLabel}
+                  value={regIdFront}
+                  onChange={setRegIdFront}
+                  cropMode="id_card"
+                  cameraFacing="environment"
+                  theme="dark"
+                  lang={lang}
+                  previewAlt="Fayda Front"
+                />
 
-                <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1.5">
-                    {t.faydaBackLabel}
-                  </label>
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/45 bg-slate-950/35 rounded-xl p-3 cursor-pointer hover:bg-slate-950/55 transition-colors">
-                    {sanitizeImageSrc(regIdBack) ? (
-                      <img
-                        src={sanitizeImageSrc(regIdBack)}
-                        alt="Fayda Back"
-                        className="h-24 w-full object-contain rounded"
-                      />
-                    ) : (
-                      <div className="flex items-center gap-2 text-xs text-white py-4">
-                        <Upload className="w-4 h-4 text-amber-300" />
-                        <span>{t.uploadBack}</span>
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => void handleFileSelect(e, setRegIdBack)}
-                    />
-                  </label>
-                </div>
+                <SmartPhotoInput
+                  label={t.faydaBackLabel}
+                  value={regIdBack}
+                  onChange={setRegIdBack}
+                  cropMode="id_card"
+                  cameraFacing="environment"
+                  theme="dark"
+                  lang={lang}
+                  previewAlt="Fayda Back"
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-rose-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.passwordLabel} *
                   </label>
                   <input
@@ -986,11 +1268,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
                     placeholder={lang === 'am' ? 'ቢያንስ 6 ቁምፊ' : 'Min 6 characters'}
-                    className="w-full px-3 py-2.5 min-h-[44px] border border-white/40 bg-slate-950/45 text-white placeholder:text-slate-200/75 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[44px] border border-rose-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-white drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)] mb-1">
+                  <label className="block text-xs font-extrabold text-rose-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
                     {t.confirmPasswordLabel}
                   </label>
                   <input
@@ -1001,7 +1283,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regConfirmPassword}
                     onChange={(e) => setRegConfirmPassword(e.target.value)}
                     placeholder={lang === 'am' ? 'በድጋሚ ያስገቡ' : 'Re-enter password'}
-                    className="w-full px-3 py-2.5 min-h-[44px] border border-white/40 bg-slate-950/45 text-white placeholder:text-slate-200/75 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[44px] border border-rose-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
                   />
                 </div>
               </div>
@@ -1009,7 +1291,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 disabled:opacity-60 text-slate-950 font-bold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-amber-500 to-yellow-300 hover:from-amber-400 hover:to-yellow-200 disabled:opacity-60 text-slate-950 font-extrabold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
               >
                 <Building2 className="w-4 h-4" />
                 {busy ? t.registeringBtn : t.registerSubmitBtn}
@@ -1029,14 +1311,128 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               </p>
             </form>
           )}
+
+          {/* Compact Cloud / Google Account & Authorized Domain Strip */}
+          <div className="pt-2 border-t border-white/15 space-y-2 text-[11px] text-slate-200">
+            {firebaseUser && firebaseUser.emailVerified ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/45 border border-emerald-400/30 rounded-xl px-3 py-2">
+                <span className="inline-flex items-center gap-1.5 text-emerald-200 font-medium truncate">
+                  <Cloud className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">
+                    {lang === 'am'
+                      ? `Firestore Cloud: ${firebaseUser.email}`
+                      : `Firestore Cloud: ${firebaseUser.email}`}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void onSignOutGoogle()}
+                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold shrink-0"
+                >
+                  {lang === 'am' ? 'መለያ ቀይር' : 'Switch Account'}
+                </button>
+              </div>
+            ) : (
+              <div className="bg-slate-950/55 border border-amber-300/30 rounded-xl p-2.5 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-amber-200 font-semibold">
+                    {domainFallbackActive
+                      ? lang === 'am'
+                        ? 'የአካባቢ ሁነታ ንቁ ነው — ለFirestore Cloud ዶሜይኑን ይፍቀዱ'
+                        : 'Local Fallback active — Authorize domain for Firestore Cloud'
+                      : lang === 'am'
+                        ? 'ለFirestore Cloud ማስቀመጫ Google ይጠየቃል'
+                        : 'Firestore Cloud sync connects via Google'}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {onRetryCloudConnect && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setErrorMsg('');
+                          void onRetryCloudConnect().then((res) => {
+                            if (res.ok) {
+                              setSuccessMsg(
+                                lang === 'am'
+                                  ? 'ከFirestore Cloud ጋር በተሳካ ሁኔታ ተገናኝቷል! ያሉት መረጃዎች ተመሳስለዋል።'
+                                  : 'Connected to Firestore Cloud and synced records!'
+                              );
+                            } else if (res.unauthorizedDomain) {
+                              setShowDomainGuide(true);
+                            }
+                          });
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        {lang === 'am' ? 'Cloud አገናኝ' : 'Connect Cloud'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowDomainGuide((v) => !v)}
+                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold"
+                    >
+                      {showDomainGuide
+                        ? lang === 'am'
+                          ? 'ደብቅ'
+                          : 'Hide'
+                        : lang === 'am'
+                          ? 'ዶሜይን መመሪያ'
+                          : 'Domain Setup'}
+                    </button>
+                  </div>
+                </div>
+
+                {showDomainGuide && (
+                  <div className="bg-slate-950/80 border border-white/20 rounded-lg p-2.5 space-y-2 text-[11px] text-slate-200">
+                    <p className="font-semibold text-amber-200">
+                      {lang === 'am'
+                        ? `በFirebase Console (${FIREBASE_PROJECT_ID}) → Authentication → Settings → Authorized domains ላይ እነዚህን ያክሉ፦`
+                        : `Add these hostnames in Firebase Console (${FIREBASE_PROJECT_ID}) → Authentication → Settings → Authorized domains:`}
+                    </p>
+                    <div className="space-y-1">
+                      {getHostnamesToAuthorize().map((host) => (
+                        <div
+                          key={host}
+                          className="flex items-center justify-between gap-2 bg-slate-900/90 border border-white/15 rounded px-2 py-1"
+                        >
+                          <span className="font-mono-tabular truncate text-[10px] text-white">
+                            {host}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyHost(host)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-bold shrink-0"
+                          >
+                            {copiedHost === host ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                <span>{lang === 'am' ? 'ተቀድቷል' : 'Copied'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>{lang === 'am' ? 'ቅዳ' : 'Copy'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </section>
 
-        {/* 5. Motto & 6. Attribution Footer (transparent so lower sea remains clear) */}
+        {/* 3. Motto & Attribution Footer (bold multi-colored typography, clear lower sea) */}
         <footer className="bg-transparent px-4 py-2 sm:px-6 sm:py-3 text-center space-y-1.5">
-          <p className="text-base sm:text-2xl font-bold tracking-wide text-amber-300 drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)]">
+          <p className="text-base sm:text-2xl font-extrabold tracking-wide text-amber-300 drop-shadow-[0_2px_10px_rgba(0,0,0,0.98)]">
             {t.motto}
           </p>
-          <p className="text-xs sm:text-sm font-semibold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+          <p className="text-xs sm:text-sm font-extrabold text-emerald-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)]">
             {t.footerAttribution}
           </p>
         </footer>

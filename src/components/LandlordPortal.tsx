@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2,
-  Check,
   CheckCircle2,
-  Cloud,
-  Copy,
   Eye,
   Globe,
   History,
@@ -30,7 +27,6 @@ import {
   toJsDate,
   verifyPassword,
 } from '../utils/crypto';
-import { FIREBASE_PROJECT_ID, getHostnamesToAuthorize } from '../utils/domainConfig';
 import { DEFAULT_REGION_NAME, OCCUPATION_OPTIONS, inferZoneForCity } from '../utils/seedData';
 import {
   markTenantMovedOut,
@@ -72,7 +68,6 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
   initialLandlord,
   branding,
   jurisdictions,
-  onRetryCloudConnect,
   onLogout,
 }) => {
   const t = DICT[lang];
@@ -282,18 +277,6 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
       ),
     [jurisdictions, addrRegion, addrZone, addrCity, addrWoreda]
   );
-
-  const [copiedDomain, setCopiedDomain] = useState('');
-
-  function handleCopyDomain(host: string) {
-    try {
-      void navigator.clipboard?.writeText(host);
-      setCopiedDomain(host);
-      window.setTimeout(() => setCopiedDomain(''), 2000);
-    } catch {
-      // Ignore clipboard failure
-    }
-  }
 
   function handleAddCoResident() {
     const val = coResidentInput.trim();
@@ -641,11 +624,11 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
             </button>
           </nav>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={onToggleLang}
-              className="inline-flex items-center gap-1 px-2.5 py-2 min-h-[40px] text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[42px] text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl whitespace-nowrap shrink-0 transition-colors"
             >
               <Globe className="w-3.5 h-3.5" />
               {t.langToggle}
@@ -653,7 +636,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-2 min-h-[40px] text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[42px] text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl whitespace-nowrap shrink-0 transition-colors"
             >
               <LogOut className="w-3.5 h-3.5" />
               {t.logout}
@@ -663,12 +646,12 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
       </header>
 
       {/* Mobile Sticky Navigation Bar */}
-      <div className="md:hidden sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-3 py-2 flex gap-1.5 overflow-x-auto scrollbar-none">
+      <div className="md:hidden sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-3 py-2.5 flex gap-2 overflow-x-auto scrollbar-none">
         <button
           type="button"
           onClick={() => setTab('register_tenant')}
-          className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 ${
-            tab === 'register_tenant' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
+          className={`px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-colors ${
+            tab === 'register_tenant' ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
           }`}
         >
           {t.tabRegisterTenant}
@@ -676,8 +659,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         <button
           type="button"
           onClick={() => setTab('my_tenants')}
-          className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 ${
-            tab === 'my_tenants' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
+          className={`px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-colors ${
+            tab === 'my_tenants' ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
           }`}
         >
           {t.tabMyTenants} ({activeTenants.length})
@@ -685,8 +668,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         <button
           type="button"
           onClick={() => setTab('change_address')}
-          className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 ${
-            tab === 'change_address' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
+          className={`px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-colors ${
+            tab === 'change_address' ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
           }`}
         >
           {t.tabChangeAddress}
@@ -694,8 +677,8 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         <button
           type="button"
           onClick={() => setTab('history')}
-          className={`px-3.5 py-2 min-h-[40px] rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 ${
-            tab === 'history' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
+          className={`px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-colors ${
+            tab === 'history' ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
           }`}
         >
           {t.tabHistory}
@@ -704,54 +687,12 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Ornamental System Title Banner */}
-        <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-xl px-4 py-3.5 sm:px-6 sm:py-4 text-center">
+        <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-2xl px-4 py-4 sm:px-6 sm:py-5 text-center shadow-sm">
           <h2 className="text-lg sm:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-emerald-300">
             {t.systemTitle}
           </h2>
-          <p className="text-xs text-cyan-300 font-bold mt-0.5">{branding.commissionName}</p>
+          <p className="text-xs sm:text-sm text-cyan-300 font-bold mt-1">{branding.commissionName}</p>
         </section>
-
-        {!isCloudConnected && (
-          <section className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-2 text-xs text-blue-950">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 font-semibold">
-                <Cloud className="w-4 h-4 text-blue-700 shrink-0" />
-                <span>
-                  {lang === 'am'
-                    ? 'የአካባቢ ሁነታ (Fallback Mode) — ለቀጥታ Firestore Cloud ይህን ዶሜይን በFirebase Console ያክሉ፦'
-                    : `Local Fallback active — Add this domain in Firebase Console (${FIREBASE_PROJECT_ID}) Authorized domains:`}
-                </span>
-              </div>
-              {onRetryCloudConnect && (
-                <button
-                  type="button"
-                  onClick={() => void onRetryCloudConnect()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold shrink-0"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  {lang === 'am' ? 'ከFirestore Cloud ጋር አገናኝ' : 'Connect Firestore Cloud'}
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {getHostnamesToAuthorize().map((host) => (
-                <button
-                  key={host}
-                  type="button"
-                  onClick={() => handleCopyDomain(host)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-blue-200 text-[11px] font-mono-tabular text-blue-900 hover:bg-blue-100"
-                >
-                  <span className="truncate max-w-[230px] sm:max-w-none">{host}</span>
-                  {copiedDomain === host ? (
-                    <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                  ) : (
-                    <Copy className="w-3 h-3 text-blue-600 shrink-0" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
 
         {/* Strict Private Landlord Summary Strip (Own Data Only) */}
         <section className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -998,18 +939,18 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                   <label className="block text-xs font-semibold text-slate-700">
                     {t.coResidentsTitle}
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="text"
                       value={coResidentInput}
                       onChange={(e) => setCoResidentInput(e.target.value)}
                       placeholder={lang === 'am' ? 'አብሮ የሚኖር ሰው ሙሉ ስም' : 'Co-resident full name'}
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                      className="flex-1 px-3.5 py-2.5 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white"
                     />
                     <button
                       type="button"
                       onClick={handleAddCoResident}
-                      className="px-4 py-2 bg-slate-900 text-white text-xs font-medium rounded-lg hover:bg-slate-800 inline-flex items-center gap-1"
+                      className="px-4 py-2.5 min-h-[44px] bg-slate-900 text-white text-xs sm:text-sm font-bold rounded-xl hover:bg-slate-800 inline-flex items-center justify-center gap-1.5 shrink-0"
                     >
                       <Plus className="w-4 h-4" />
                       {t.addBtn}
@@ -1453,7 +1394,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                 <button
                   type="submit"
                   disabled={busy}
-                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium rounded-lg inline-flex items-center gap-2"
+                  className="w-full sm:w-auto px-5 py-3 min-h-[46px] bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl inline-flex items-center justify-center gap-2 transition-colors"
                 >
                   <Home className="w-4 h-4" />
                   {busy ? '...' : t.saveAddressBtn}
@@ -1631,7 +1572,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
                 <button
                   type="submit"
                   disabled={busy}
-                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium rounded-lg inline-flex items-center gap-2"
+                  className="w-full sm:w-auto px-5 py-3 min-h-[46px] bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl inline-flex items-center justify-center gap-2 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   {busy ? '...' : t.addPropertyBtn}

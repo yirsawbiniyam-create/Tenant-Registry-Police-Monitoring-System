@@ -4,15 +4,10 @@ import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firesto
 import {
   ArrowLeft,
   Building2,
-  Check,
-  Cloud,
-  Copy,
   Eye,
   EyeOff,
   Globe,
   Lock,
-  LogIn,
-  RefreshCw,
   UserPlus,
 } from 'lucide-react';
 import { db, ROOT_ADMIN_EMAIL } from '../firebase';
@@ -34,10 +29,6 @@ import {
   syncFallbackRecordsToCloud,
 } from '../services/firestoreService';
 import { registerFallbackLandlord, verifyFallbackLogin } from '../utils/localFallback';
-import {
-  FIREBASE_PROJECT_ID,
-  getHostnamesToAuthorize,
-} from '../utils/domainConfig';
 import {
   DEFAULT_REGION_NAME,
   LOGIN_SEA_MOUNTAINS_BG_PATH,
@@ -238,8 +229,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   branding,
   jurisdictions,
   onSignInGoogle,
-  onRetryCloudConnect,
-  onSignOutGoogle,
   onEnterSession,
 }) => {
   const t = DICT[lang];
@@ -247,8 +236,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  const [showDomainGuide, setShowDomainGuide] = useState(false);
-  const [copiedHost, setCopiedHost] = useState('');
 
   // Unified Single-Row Login State + Brute-Force Protection
   const [identifier, setIdentifier] = useState('');
@@ -385,16 +372,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       ),
     [jurisdictions, regRegion, regZone, regCity, regWoreda]
   );
-
-  function handleCopyHost(host: string) {
-    try {
-      void navigator.clipboard?.writeText(host);
-      setCopiedHost(host);
-      window.setTimeout(() => setCopiedHost(''), 2000);
-    } catch {
-      // Ignore clipboard failure
-    }
-  }
 
   async function resolveAccountPrivileges(user: User): Promise<{ isAdmin: boolean; isPolice: boolean }> {
     const email = (user.email || '').toLowerCase();
@@ -875,39 +852,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
         {/* 2. Transparent Login & Register Controls (does not obscure scenic sea/watermark/flags) */}
         <section className="bg-slate-950/25 backdrop-blur-[2px] border border-cyan-300/25 rounded-2xl p-3.5 sm:p-6 space-y-4 shadow-xl">
-          {/* Segmented Login / Register Switch Bar */}
-          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-amber-300/25">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setErrorMsg('');
-              }}
-              className={`py-2.5 px-3 min-h-[42px] rounded-lg text-xs sm:text-sm font-extrabold inline-flex items-center justify-center gap-1.5 transition-all ${
-                mode === 'login'
-                  ? 'bg-slate-900 text-amber-300 border border-amber-300/60 shadow'
-                  : 'text-sky-200 hover:text-amber-200 hover:bg-white/10'
-              }`}
-            >
-              <LogIn className="w-4 h-4 shrink-0" />
-              <span className="truncate">{t.loginTab}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('register');
-                setErrorMsg('');
-              }}
-              className={`py-2.5 px-3 min-h-[42px] rounded-lg text-xs sm:text-sm font-extrabold inline-flex items-center justify-center gap-1.5 transition-all ${
-                mode === 'register'
-                  ? 'bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 border border-amber-200 shadow'
-                  : 'text-emerald-200 hover:text-amber-200 hover:bg-white/10'
-              }`}
-            >
-              <UserPlus className="w-4 h-4 shrink-0" />
-              <span className="truncate">{t.registerTab}</span>
-            </button>
-          </div>
 
           {errorMsg && (
             <div className="p-3.5 bg-red-950/85 border border-red-400/60 rounded-xl text-xs sm:text-sm text-rose-200 font-bold shadow-md">
@@ -925,7 +869,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
             <form onSubmit={handleUnifiedLogin} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                 <div>
-                  <label className="block text-xs font-extrabold text-emerald-300 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] mb-1.5">
+                  <label className="block text-xs sm:text-sm font-bold text-amber-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.usernameOrPhoneLabel}
                   </label>
                   <input
@@ -935,12 +879,12 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder={t.usernameOrPhonePlaceholder}
-                    className="w-full px-3.5 py-3 min-h-[44px] border border-emerald-300/45 rounded-xl text-sm font-bold text-amber-100 placeholder:text-sky-200/70 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-slate-950/55 focus:bg-slate-950/75 transition-colors"
+                    className="w-full px-3.5 py-3 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold text-slate-50 placeholder:text-slate-300/70 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300 bg-slate-950/65 focus:bg-slate-950/80 transition-colors"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-extrabold text-sky-300 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] mb-1.5">
+                  <label className="block text-xs sm:text-sm font-bold text-amber-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.passwordLabel}
                   </label>
                   <div className="relative">
@@ -951,13 +895,13 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={t.passwordPlaceholder}
-                      className="w-full pl-3.5 pr-11 py-3 min-h-[44px] border border-sky-300/45 rounded-xl text-sm font-bold text-amber-100 placeholder:text-sky-200/70 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-slate-950/55 focus:bg-slate-950/75 transition-colors"
+                      className="w-full pl-3.5 pr-12 py-3 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold text-slate-50 placeholder:text-slate-300/70 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300 bg-slate-950/65 focus:bg-slate-950/80 transition-colors"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
                       aria-label="Toggle password visibility"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-amber-300 hover:text-cyan-200"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2.5 min-w-[40px] min-h-[40px] flex items-center justify-center text-amber-300 hover:text-cyan-200 rounded-lg"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -968,7 +912,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               <button
                 type="submit"
                 disabled={busy || remainingLockSeconds > 0}
-                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-slate-900/95 via-blue-950/95 to-emerald-950/95 hover:from-slate-800 hover:to-blue-900 border border-amber-300/60 disabled:opacity-60 text-amber-300 font-extrabold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 hover:from-slate-800 hover:to-blue-900 border border-amber-300/65 disabled:opacity-60 text-amber-300 font-extrabold text-sm sm:text-base rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
               >
                 <Lock className="w-4 h-4 text-emerald-300" />
                 {remainingLockSeconds > 0
@@ -980,8 +924,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     : t.loginButton}
               </button>
 
-              <div className="pt-1 flex flex-col sm:flex-row items-center justify-center gap-2 text-xs text-center">
-                <span className="font-bold text-cyan-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)]">
+              <div className="pt-2 border-t border-white/15 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs sm:text-sm">
+                <span className="font-semibold text-cyan-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] text-center sm:text-left">
                   {t.newLandlordPrompt}
                 </span>
                 <button
@@ -990,9 +934,9 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     setMode('register');
                     setErrorMsg('');
                   }}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 min-h-[40px] rounded-lg bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 border border-amber-200 text-slate-950 font-extrabold transition-colors w-full sm:w-auto shadow-md"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 border border-amber-200 text-slate-950 font-extrabold text-xs sm:text-sm transition-colors w-full sm:w-auto shadow-md whitespace-nowrap"
                 >
-                  <UserPlus className="w-3.5 h-3.5" />
+                  <UserPlus className="w-4 h-4 shrink-0" />
                   {t.registerLink}
                 </button>
               </div>
@@ -1002,7 +946,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
           {/* MODE 2: NEW LANDLORD REGISTRATION */}
           {mode === 'register' && (
             <form onSubmit={handleLandlordRegister} className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-amber-300/25">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/15">
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-300 text-slate-950 flex items-center justify-center shrink-0 shadow">
                     <Building2 className="w-5 h-5" />
@@ -1011,7 +955,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     <h3 className="text-base sm:text-lg font-extrabold text-amber-300 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)]">
                       {t.registerHeading}
                     </h3>
-                    <p className="text-xs font-bold text-cyan-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
+                    <p className="text-xs font-semibold text-cyan-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
                       {t.registerSubtitle}
                     </p>
                   </div>
@@ -1022,16 +966,16 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     setMode('login');
                     setErrorMsg('');
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-lg bg-slate-950/65 hover:bg-slate-950/85 border border-emerald-300/40 text-emerald-300 text-xs font-extrabold transition-colors"
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[42px] rounded-xl bg-slate-950/75 hover:bg-slate-900 border border-cyan-200/35 text-cyan-200 text-xs font-bold transition-colors"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   {t.loginTab}
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-extrabold text-sky-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.fullNameLabel}
                   </label>
                   <input
@@ -1041,11 +985,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regName}
                     onChange={(e) => setRegName(e.target.value)}
                     placeholder={lang === 'am' ? 'ስም / የአባት ስም / የአያት ስም' : 'First / Middle / Last Name'}
-                    className="w-full px-3 py-2.5 border border-sky-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3.5 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold placeholder:text-slate-300/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-sky-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.phoneUsernameLabel}
                   </label>
                   <input
@@ -1055,7 +999,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regPhone}
                     onChange={(e) => setRegPhone(e.target.value)}
                     placeholder="09..."
-                    className="w-full px-3 py-2.5 border border-sky-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3.5 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold placeholder:text-slate-300/70 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   />
                 </div>
               </div>
@@ -1063,7 +1007,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               {/* 5-Level Cascading Location: Region -> Zone -> City -> Woreda -> Kebele */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.regionLabel}
                   </label>
                   <select
@@ -1076,20 +1020,20 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       setRegWoreda('');
                       setRegKebele('');
                     }}
-                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   >
-                    <option value="" className="bg-slate-900 text-amber-200">
+                    <option value="" className="bg-slate-900 text-slate-300">
                       {t.selectRegion}
                     </option>
                     {regions.map((r) => (
-                      <option key={r} value={r} className="bg-slate-900 text-amber-100">
+                      <option key={r} value={r} className="bg-slate-900 text-white">
                         {r}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.zoneLabel}
                   </label>
                   <select
@@ -1101,13 +1045,13 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       setRegWoreda('');
                       setRegKebele('');
                     }}
-                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   >
-                    <option value="" className="bg-slate-900 text-amber-200">
+                    <option value="" className="bg-slate-900 text-slate-300">
                       {t.selectZone}
                     </option>
                     {zones.map((z) => (
-                      <option key={z} value={z} className="bg-slate-900 text-amber-100">
+                      <option key={z} value={z} className="bg-slate-900 text-white">
                         {z}
                       </option>
                     ))}
@@ -1117,7 +1061,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.cityLabel}
                   </label>
                   <select
@@ -1128,20 +1072,20 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       setRegWoreda('');
                       setRegKebele('');
                     }}
-                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   >
-                    <option value="" className="bg-slate-900 text-amber-200">
+                    <option value="" className="bg-slate-900 text-slate-300">
                       {t.selectCity}
                     </option>
                     {cities.map((c) => (
-                      <option key={c} value={c} className="bg-slate-900 text-amber-100">
+                      <option key={c} value={c} className="bg-slate-900 text-white">
                         {c}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.woredaLabel}
                   </label>
                   <select
@@ -1151,33 +1095,33 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       setRegWoreda(e.target.value);
                       setRegKebele('');
                     }}
-                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   >
-                    <option value="" className="bg-slate-900 text-amber-200">
+                    <option value="" className="bg-slate-900 text-slate-300">
                       {t.selectWoreda}
                     </option>
                     {woredas.map((w) => (
-                      <option key={w} value={w} className="bg-slate-900 text-amber-100">
+                      <option key={w} value={w} className="bg-slate-900 text-white">
                         {w}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-amber-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.kebeleLabel}
                   </label>
                   <select
                     required
                     value={regKebele}
                     onChange={(e) => setRegKebele(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-amber-300/45 rounded-xl text-sm font-bold bg-slate-950/65 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   >
-                    <option value="" className="bg-slate-900 text-amber-200">
+                    <option value="" className="bg-slate-900 text-slate-300">
                       {t.selectKebele}
                     </option>
                     {kebeles.map((k) => (
-                      <option key={k} value={k} className="bg-slate-900 text-amber-100">
+                      <option key={k} value={k} className="bg-slate-900 text-white">
                         {k}
                       </option>
                     ))}
@@ -1187,7 +1131,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-extrabold text-emerald-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.houseNoLabel}
                   </label>
                   <input
@@ -1197,11 +1141,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regHouseNo}
                     onChange={(e) => setRegHouseNo(e.target.value)}
                     placeholder="104"
-                    className="w-full px-3 py-2.5 border border-emerald-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold placeholder:text-slate-300/70 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-emerald-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.roomCountLabel}
                   </label>
                   <input
@@ -1211,11 +1155,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     required
                     value={regRoomCount}
                     onChange={(e) => setRegRoomCount(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-emerald-300/45 bg-slate-950/55 text-amber-100 font-bold rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-emerald-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.faydaIdLabel}
                   </label>
                   <input
@@ -1225,7 +1169,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regFaydaId}
                     onChange={(e) => setRegFaydaId(e.target.value)}
                     placeholder="Fayda FIN / FAN"
-                    className="w-full px-3 py-2.5 border border-emerald-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm font-mono-tabular focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold placeholder:text-slate-300/70 rounded-xl text-sm font-mono-tabular focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   />
                 </div>
               </div>
@@ -1257,7 +1201,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-extrabold text-rose-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.passwordLabel} *
                   </label>
                   <input
@@ -1268,11 +1212,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
                     placeholder={lang === 'am' ? 'ቢያንስ 6 ቁምፊ' : 'Min 6 characters'}
-                    className="w-full px-3 py-2.5 min-h-[44px] border border-rose-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3.5 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold placeholder:text-slate-300/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-rose-300 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1">
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.confirmPasswordLabel}
                   </label>
                   <input
@@ -1283,148 +1227,35 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={regConfirmPassword}
                     onChange={(e) => setRegConfirmPassword(e.target.value)}
                     placeholder={lang === 'am' ? 'በድጋሚ ያስገቡ' : 'Re-enter password'}
-                    className="w-full px-3 py-2.5 min-h-[44px] border border-rose-300/45 bg-slate-950/55 text-amber-100 font-bold placeholder:text-sky-200/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full px-3.5 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold placeholder:text-slate-300/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   />
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={busy}
-                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-amber-500 to-yellow-300 hover:from-amber-400 hover:to-yellow-200 disabled:opacity-60 text-slate-950 font-extrabold text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
-              >
-                <Building2 className="w-4 h-4" />
-                {busy ? t.registeringBtn : t.registerSubmitBtn}
-              </button>
+              <div className="space-y-2.5 pt-1">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-amber-500 to-yellow-300 hover:from-amber-400 hover:to-yellow-200 disabled:opacity-60 text-slate-950 font-extrabold text-sm sm:text-base rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                >
+                  <Building2 className="w-4 h-4" />
+                  {busy ? t.registeringBtn : t.registerSubmitBtn}
+                </button>
 
-              <p className="text-xs text-white text-center pt-1">
                 <button
                   type="button"
                   onClick={() => {
                     setMode('login');
                     setErrorMsg('');
                   }}
-                  className="text-amber-200 font-bold underline hover:text-white py-1.5 drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)]"
+                  className="w-full py-2.5 px-4 min-h-[44px] rounded-xl bg-slate-950/70 hover:bg-slate-900 border border-cyan-200/30 text-cyan-200 font-bold text-xs sm:text-sm transition-colors"
                 >
                   {t.backToLogin}
                 </button>
-              </p>
+              </div>
             </form>
           )}
 
-          {/* Compact Cloud / Google Account & Authorized Domain Strip */}
-          <div className="pt-2 border-t border-white/15 space-y-2 text-[11px] text-slate-200">
-            {firebaseUser && firebaseUser.emailVerified ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/45 border border-emerald-400/30 rounded-xl px-3 py-2">
-                <span className="inline-flex items-center gap-1.5 text-emerald-200 font-medium truncate">
-                  <Cloud className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">
-                    {lang === 'am'
-                      ? `Firestore Cloud: ${firebaseUser.email}`
-                      : `Firestore Cloud: ${firebaseUser.email}`}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void onSignOutGoogle()}
-                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold shrink-0"
-                >
-                  {lang === 'am' ? 'መለያ ቀይር' : 'Switch Account'}
-                </button>
-              </div>
-            ) : (
-              <div className="bg-slate-950/55 border border-amber-300/30 rounded-xl p-2.5 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-amber-200 font-semibold">
-                    {domainFallbackActive
-                      ? lang === 'am'
-                        ? 'የአካባቢ ሁነታ ንቁ ነው — ለFirestore Cloud ዶሜይኑን ይፍቀዱ'
-                        : 'Local Fallback active — Authorize domain for Firestore Cloud'
-                      : lang === 'am'
-                        ? 'ለFirestore Cloud ማስቀመጫ Google ይጠየቃል'
-                        : 'Firestore Cloud sync connects via Google'}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {onRetryCloudConnect && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setErrorMsg('');
-                          void onRetryCloudConnect().then((res) => {
-                            if (res.ok) {
-                              setSuccessMsg(
-                                lang === 'am'
-                                  ? 'ከFirestore Cloud ጋር በተሳካ ሁኔታ ተገናኝቷል! ያሉት መረጃዎች ተመሳስለዋል።'
-                                  : 'Connected to Firestore Cloud and synced records!'
-                              );
-                            } else if (res.unauthorizedDomain) {
-                              setShowDomainGuide(true);
-                            }
-                          });
-                        }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold"
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                        {lang === 'am' ? 'Cloud አገናኝ' : 'Connect Cloud'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowDomainGuide((v) => !v)}
-                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold"
-                    >
-                      {showDomainGuide
-                        ? lang === 'am'
-                          ? 'ደብቅ'
-                          : 'Hide'
-                        : lang === 'am'
-                          ? 'ዶሜይን መመሪያ'
-                          : 'Domain Setup'}
-                    </button>
-                  </div>
-                </div>
-
-                {showDomainGuide && (
-                  <div className="bg-slate-950/80 border border-white/20 rounded-lg p-2.5 space-y-2 text-[11px] text-slate-200">
-                    <p className="font-semibold text-amber-200">
-                      {lang === 'am'
-                        ? `በFirebase Console (${FIREBASE_PROJECT_ID}) → Authentication → Settings → Authorized domains ላይ እነዚህን ያክሉ፦`
-                        : `Add these hostnames in Firebase Console (${FIREBASE_PROJECT_ID}) → Authentication → Settings → Authorized domains:`}
-                    </p>
-                    <div className="space-y-1">
-                      {getHostnamesToAuthorize().map((host) => (
-                        <div
-                          key={host}
-                          className="flex items-center justify-between gap-2 bg-slate-900/90 border border-white/15 rounded px-2 py-1"
-                        >
-                          <span className="font-mono-tabular truncate text-[10px] text-white">
-                            {host}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyHost(host)}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-bold shrink-0"
-                          >
-                            {copiedHost === host ? (
-                              <>
-                                <Check className="w-3 h-3" />
-                                <span>{lang === 'am' ? 'ተቀድቷል' : 'Copied'}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                <span>{lang === 'am' ? 'ቅዳ' : 'Copy'}</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         </section>
 
         {/* 3. Motto & Attribution Footer (bold multi-colored typography, clear lower sea) */}

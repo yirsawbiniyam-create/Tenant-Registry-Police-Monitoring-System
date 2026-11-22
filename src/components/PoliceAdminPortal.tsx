@@ -3,11 +3,8 @@ import {
   AlertOctagon,
   BarChart3,
   Camera,
-  Check,
   CheckCircle2,
   ChevronRight,
-  Cloud,
-  Copy,
   Edit3,
   FileWarning,
   Folder,
@@ -48,7 +45,6 @@ import {
   sanitizeImageSrc,
   toJsDate,
 } from '../utils/crypto';
-import { FIREBASE_PROJECT_ID, getHostnamesToAuthorize } from '../utils/domainConfig';
 import {
   addJurisdiction,
   checkWantedMatch,
@@ -178,7 +174,6 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   officer,
   branding,
   jurisdictions,
-  onRetryCloudConnect,
   onLogout,
 }) => {
   const t = DICT[lang];
@@ -649,18 +644,6 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       return false;
     });
   }, [dossier, history]);
-
-  const [copiedDomain, setCopiedDomain] = useState('');
-
-  function handleCopyDomain(host: string) {
-    try {
-      void navigator.clipboard?.writeText(host);
-      setCopiedDomain(host);
-      window.setTimeout(() => setCopiedDomain(''), 2000);
-    } catch {
-      // Ignore clipboard failure
-    }
-  }
 
   async function handlePhotoSearch() {
     if (!photoQueryImg) return;
@@ -1584,11 +1567,11 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={onToggleLang}
-              className="inline-flex items-center gap-1 px-2.5 py-2 min-h-[40px] text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[42px] text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl whitespace-nowrap shrink-0 transition-colors"
             >
               <Globe className="w-3.5 h-3.5" />
               {t.langToggle}
@@ -1596,7 +1579,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-2 min-h-[40px] text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[42px] text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl whitespace-nowrap shrink-0 transition-colors"
             >
               <LogOut className="w-3.5 h-3.5" />
               {t.logout}
@@ -1608,14 +1591,14 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       <div className="flex-1 max-w-[1440px] w-full mx-auto flex flex-col lg:flex-row">
         {/* Sidebar / Mobile Sticky Navigation */}
         <aside className="sticky top-0 z-30 lg:static lg:w-64 bg-white/95 backdrop-blur border-b lg:border-b-0 lg:border-r border-slate-200 p-2.5 sm:p-3 lg:p-4 shrink-0 no-print">
-          <nav className="flex lg:flex-col gap-1.5 lg:gap-1 overflow-x-auto lg:overflow-visible scrollbar-none">
+          <nav className="flex lg:flex-col gap-2 lg:gap-1.5 overflow-x-auto lg:overflow-visible scrollbar-none">
             <button
               type="button"
               onClick={() => setSection('folders')}
-              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 section === 'folders'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               <Folder className="w-4 h-4 shrink-0" />
@@ -1624,10 +1607,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('search')}
-              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 section === 'search'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               <Search className="w-4 h-4 shrink-0" />
@@ -1636,10 +1619,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('wanted')}
-              className={`flex items-center justify-between gap-2 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+              className={`flex items-center justify-between gap-2 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 section === 'wanted'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               <span className="inline-flex items-center gap-2 sm:gap-2.5">
@@ -1655,10 +1638,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('suspects')}
-              className={`flex items-center justify-between gap-2 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+              className={`flex items-center justify-between gap-2 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 section === 'suspects'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               <span className="inline-flex items-center gap-2 sm:gap-2.5">
@@ -1670,10 +1653,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('criminal_records')}
-              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 section === 'criminal_records'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               <FileWarning className="w-4 h-4 shrink-0" />
@@ -1682,10 +1665,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('statistics')}
-              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 section === 'statistics'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               <BarChart3 className="w-4 h-4 shrink-0" />
@@ -1694,10 +1677,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('history')}
-              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 section === 'history'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               <History className="w-4 h-4 shrink-0" />
@@ -1706,10 +1689,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <button
               type="button"
               onClick={() => setSection('account_actions')}
-              className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+              className={`flex items-center gap-2 sm:gap-2.5 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 section === 'account_actions'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
               }`}
             >
               <RefreshCw className="w-4 h-4 shrink-0" />
@@ -1719,10 +1702,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setSection('admin_setup')}
-                className={`flex items-center gap-2 sm:gap-2.5 px-3 py-2 min-h-[40px] rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${
+                className={`flex items-center gap-2 sm:gap-2.5 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors ${
                   section === 'admin_setup'
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-700 hover:bg-slate-100'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 lg:bg-transparent text-slate-700 hover:bg-slate-100'
                 }`}
               >
                 <UserCog className="w-4 h-4 shrink-0" />
@@ -1735,58 +1718,17 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         {/* Main Workspace Viewport */}
         <main className="flex-1 p-3 sm:p-6 space-y-4 sm:space-y-6 overflow-x-hidden">
           {/* Ornamental System Title Banner */}
-          <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-xl px-4 py-3.5 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 no-print">
+          <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-2xl px-4 py-4 sm:px-6 sm:py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 no-print shadow-sm">
             <div>
               <h1 className="text-lg sm:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-emerald-300">
                 {t.systemTitle}
               </h1>
-              <p className="text-xs text-cyan-300 font-bold mt-0.5">
+              <p className="text-xs sm:text-sm text-cyan-300 font-bold mt-1">
                 {branding.commissionName}
               </p>
             </div>
-            <p className="text-xs text-amber-200 font-bold">{t.motto}</p>
+            <p className="text-xs sm:text-sm text-amber-200 font-bold">{t.motto}</p>
           </section>
-
-          {!isCloudConnected && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-2 text-xs text-blue-950 no-print">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-start gap-2">
-                  <Cloud className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">የአካባቢ ሁነታ (Fallback Mode)፦ </span>
-                    ዶሜይኑን በFirebase Console (<span className="font-mono-tabular font-semibold">{FIREBASE_PROJECT_ID}</span> → Authentication → Settings → Authorized domains) ላይ ሲያክሉ መረጃዎች በቀጥታ Firestore Cloud ላይ ይቀመጣሉ።
-                  </div>
-                </div>
-                {onRetryCloudConnect && (
-                  <button
-                    type="button"
-                    onClick={() => void onRetryCloudConnect()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold shrink-0"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    {lang === 'am' ? 'ከFirestore Cloud ጋር አገናኝ' : 'Connect Firestore Cloud'}
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {getHostnamesToAuthorize().map((host) => (
-                  <button
-                    key={host}
-                    type="button"
-                    onClick={() => handleCopyDomain(host)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-blue-200 text-[11px] font-mono-tabular text-blue-900 hover:bg-blue-100"
-                  >
-                    <span className="truncate max-w-[230px] sm:max-w-none">{host}</span>
-                    {copiedDomain === host ? (
-                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                    ) : (
-                      <Copy className="w-3 h-3 text-blue-600 shrink-0" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {isAdmin && adminCred?.isDefaultPassword && (
             <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
@@ -1831,18 +1773,18 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       </p>
                       <p className="text-red-700">{alert.matchType}</p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
                       <button
                         type="button"
                         onClick={() => void handleAlertStatusUpdate(alert.alertId, 'acknowledged')}
-                        className="px-3 py-1.5 bg-red-700 text-white rounded-md font-medium hover:bg-red-800"
+                        className="px-3.5 py-2 min-h-[40px] bg-red-700 text-white rounded-xl font-bold hover:bg-red-800 transition-colors"
                       >
                         ተቀብያለሁ
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleAlertStatusUpdate(alert.alertId, 'resolved')}
-                        className="px-3 py-1.5 bg-slate-100 text-slate-800 rounded-md font-medium hover:bg-slate-200"
+                        className="px-3.5 py-2 min-h-[40px] bg-slate-100 text-slate-800 rounded-xl font-bold hover:bg-slate-200 transition-colors"
                       >
                         ተጠናቋል
                       </button>
@@ -1866,52 +1808,52 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
           )}
 
           {/* LIVE MAIN DASHBOARD KPI SUMMARY STRIP */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 no-print">
-            <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs text-slate-500">{t.kpiLandlords}</p>
-              <p className="text-xl font-bold text-slate-900 tabular-nums mt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 no-print">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-medium text-slate-500">{t.kpiLandlords}</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
                 {scopedLandlords.length}
               </p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs text-slate-500">{t.kpiTenants}</p>
-              <p className="text-xl font-bold text-slate-900 tabular-nums mt-1">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-medium text-slate-500">{t.kpiTenants}</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
                 {scopedTenants.length}
               </p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs text-slate-500">{t.kpiPoliceTenants}</p>
-              <p className="text-xl font-bold text-blue-700 tabular-nums mt-1">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-medium text-slate-500">{t.kpiPoliceTenants}</p>
+              <p className="text-2xl font-bold text-blue-700 tabular-nums mt-1">
                 {policeTenantsCount}
               </p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs text-slate-500">{t.kpiWantedActive}</p>
-              <p className="text-xl font-bold text-red-700 tabular-nums mt-1">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-medium text-slate-500">{t.kpiWantedActive}</p>
+              <p className="text-2xl font-bold text-red-700 tabular-nums mt-1">
                 {wantedPersons.filter((w) => w.status === 'active').length}
               </p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs text-slate-500">{t.kpiSuspects}</p>
-              <p className="text-xl font-bold text-amber-600 tabular-nums mt-1">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-medium text-slate-500">{t.kpiSuspects}</p>
+              <p className="text-2xl font-bold text-amber-600 tabular-nums mt-1">
                 {suspectsList.length}
               </p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs text-slate-500">{t.kpiRepeatOffenders}</p>
-              <p className="text-xl font-bold text-red-700 tabular-nums mt-1">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-medium text-slate-500">{t.kpiRepeatOffenders}</p>
+              <p className="text-2xl font-bold text-red-700 tabular-nums mt-1">
                 {repeatOffendersCount}
               </p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs text-slate-500">{t.kpiArrestedToday}</p>
-              <p className="text-xl font-bold text-red-800 tabular-nums mt-1">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-medium text-slate-500">{t.kpiArrestedToday}</p>
+              <p className="text-2xl font-bold text-red-800 tabular-nums mt-1">
                 {arrestedTodayCount}
               </p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <p className="text-xs text-slate-500">{t.kpiTotalArrested}</p>
-              <p className="text-xl font-bold text-slate-900 tabular-nums mt-1">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-xs font-medium text-slate-500">{t.kpiTotalArrested}</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
                 {totalArrestedList.length}
               </p>
             </div>
@@ -2972,18 +2914,18 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                           <p className="text-xs text-slate-400 mt-1">
                             {c.stationName} ({c.city} / {c.woreda} / {c.kebele})
                           </p>
-                          <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 mt-3">
                             <button
                               type="button"
                               onClick={() => void handleCriminalTypeChange(c.recordId, 'arrested')}
-                              className="px-2.5 py-1 bg-red-700 hover:bg-red-800 text-white text-xs font-medium rounded"
+                              className="px-3 py-2 min-h-[38px] bg-red-700 hover:bg-red-800 text-white text-xs font-bold rounded-lg transition-colors"
                             >
                               {t.promoteToArrested}
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleCriminalTypeChange(c.recordId, 'released')}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded"
+                              className="px-3 py-2 min-h-[38px] bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
                             >
                               {t.markReleased}
                             </button>
@@ -2999,7 +2941,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                   portraitImage: c.photoImage,
                                 })
                               }
-                              className="px-2.5 py-1 bg-slate-900 text-white text-xs font-medium rounded"
+                              className="px-3 py-2 min-h-[38px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
                             >
                               {t.openDossierBtn}
                             </button>
@@ -3007,7 +2949,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => void handleDeleteCriminal(c)}
-                                className="px-2 py-1 text-red-600 hover:text-red-800 text-xs"
+                                className="px-3 py-2 min-h-[38px] bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-lg transition-colors"
                               >
                                 {t.deleteRecordBtn}
                               </button>
@@ -3456,12 +3398,12 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                 </p>
 
                                 {/* Quick Suspect Tagging & Status Controls */}
-                                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 mt-3">
                                   {c.recordType !== 'suspect' && (
                                     <button
                                       type="button"
                                       onClick={() => void handleCriminalTypeChange(c.recordId, 'suspect')}
-                                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-semibold rounded"
+                                      className="px-3 py-2 min-h-[38px] bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold rounded-lg transition-colors"
                                     >
                                       {lang === 'am' ? 'ተጠርጣሪ በል' : 'Tag Suspect'}
                                     </button>
@@ -3470,7 +3412,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => void handleCriminalTypeChange(c.recordId, 'arrested')}
-                                      className="px-2.5 py-1 bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded"
+                                      className="px-3 py-2 min-h-[38px] bg-red-700 hover:bg-red-800 text-white text-xs font-bold rounded-lg transition-colors"
                                     >
                                       {t.promoteToArrested}
                                     </button>
@@ -3479,7 +3421,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => void handleCriminalTypeChange(c.recordId, 'released')}
-                                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded"
+                                      className="px-3 py-2 min-h-[38px] bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
                                     >
                                       {t.markReleased}
                                     </button>
@@ -3487,9 +3429,9 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => startEditCriminalRecord(c)}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded"
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[38px] bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg transition-colors"
                                   >
-                                    <Edit3 className="w-3 h-3" />
+                                    <Edit3 className="w-3.5 h-3.5" />
                                     {lang === 'am' ? 'አስተካክል' : 'Edit'}
                                   </button>
                                   <button
@@ -3504,7 +3446,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                         portraitImage: c.photoImage,
                                       })
                                     }
-                                    className="px-2.5 py-1 bg-slate-900 text-white text-xs rounded font-medium"
+                                    className="px-3 py-2 min-h-[38px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
                                   >
                                     {t.openDossierBtn}
                                   </button>
@@ -3512,7 +3454,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => void handleDeleteCriminal(c)}
-                                      className="px-2.5 py-1 bg-red-50 text-red-700 hover:bg-red-100 text-xs rounded"
+                                      className="px-3 py-2 min-h-[38px] bg-red-50 text-red-700 hover:bg-red-100 text-xs font-bold rounded-lg transition-colors"
                                     >
                                       {t.deleteRecordBtn}
                                     </button>
@@ -4545,7 +4487,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 no-print">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 no-print">
                 <button
                   type="button"
                   onClick={() =>
@@ -4557,7 +4499,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       type: 'suspect',
                     })
                   }
-                  className="px-3 py-2 min-h-[38px] bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg"
+                  className="px-3.5 py-2.5 min-h-[42px] bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-colors"
                 >
                   {t.tagAsSuspect}
                 </button>
@@ -4572,22 +4514,22 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       type: 'arrested',
                     })
                   }
-                  className="px-3 py-2 min-h-[38px] bg-red-700 hover:bg-red-800 text-white text-xs font-semibold rounded-lg"
+                  className="px-3.5 py-2.5 min-h-[42px] bg-red-700 hover:bg-red-800 text-white text-xs font-bold rounded-xl transition-colors"
                 >
                   {t.addCrimeRecordFromDossier}
                 </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[38px] bg-slate-900 text-white text-xs font-medium rounded-lg"
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors"
                 >
-                  <Printer className="w-3.5 h-3.5" />
+                  <Printer className="w-4 h-4 shrink-0" />
                   {t.printBtn}
                 </button>
                 <button
                   type="button"
                   onClick={() => setDossier(null)}
-                  className="px-3 py-2 min-h-[38px] bg-slate-100 text-slate-800 text-xs font-medium rounded-lg"
+                  className="px-3.5 py-2.5 min-h-[42px] bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-colors"
                 >
                   {t.closeBtn}
                 </button>

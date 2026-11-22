@@ -5,13 +5,25 @@
   body {
     overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    font-family: "Plus Jakarta Sans", "Noto Sans Ethiopic", system-ui, -apple-system, sans-serif;
+    font-family: "Noto Sans Ethiopic", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    line-height: 1.55;
     color: #0f172a;
     background-color: #f8fafc;
     padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  button,
+  [role="button"],
+  a,
+  select,
+  input,
+  textarea {
+    touch-action: manipulation;
   }
 
   @media (max-width: 640px) {

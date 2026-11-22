@@ -220,10 +220,10 @@ export const SmartPhotoInput: React.FC<SmartPhotoInputProps> = ({
     <div className="space-y-1.5">
       {label && (
         <label
-          className={`block text-xs font-extrabold mb-1 ${
+          className={`block text-xs font-bold mb-1 ${
             isDark
-              ? 'text-cyan-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)]'
-              : 'text-slate-700 font-bold'
+              ? 'text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)]'
+              : 'text-slate-700 font-semibold'
           }`}
         >
           {label}
@@ -250,7 +250,7 @@ export const SmartPhotoInput: React.FC<SmartPhotoInputProps> = ({
       <div
         className={`rounded-xl border transition-colors ${
           isDark
-            ? 'border-white/40 bg-slate-950/45 p-2.5 text-white'
+            ? 'border-cyan-200/35 bg-slate-950/60 p-2.5 text-white'
             : 'border-slate-300 bg-white p-2.5 text-slate-900'
         }`}
       >
@@ -265,7 +265,7 @@ export const SmartPhotoInput: React.FC<SmartPhotoInputProps> = ({
               type="button"
               onClick={() => onChange('')}
               aria-label="Remove image"
-              className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-slate-950/75 hover:bg-red-700 text-white shadow transition-colors"
+              className="absolute top-1.5 right-1.5 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg bg-slate-950/80 hover:bg-red-700 text-white shadow transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -277,13 +277,13 @@ export const SmartPhotoInput: React.FC<SmartPhotoInputProps> = ({
             type="button"
             disabled={processing}
             onClick={() => cameraRef.current?.click()}
-            className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-2 min-h-[40px] rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${
+            className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${
               isDark
                 ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-sm'
                 : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
             }`}
           >
-            <Camera className="w-3.5 h-3.5 shrink-0" />
+            <Camera className="w-4 h-4 shrink-0" />
             <span className="truncate">
               {processing ? '...' : lang === 'am' ? 'በካሜራ አንሳ' : 'Camera'}
             </span>
@@ -293,13 +293,13 @@ export const SmartPhotoInput: React.FC<SmartPhotoInputProps> = ({
             type="button"
             disabled={processing}
             onClick={() => galleryRef.current?.click()}
-            className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-2 min-h-[40px] rounded-lg text-xs font-bold border transition-colors disabled:opacity-50 ${
+            className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-bold border transition-colors disabled:opacity-50 ${
               isDark
-                ? 'bg-slate-900/80 hover:bg-slate-800 border-white/35 text-white'
+                ? 'bg-slate-900/80 hover:bg-slate-800 border-cyan-200/30 text-slate-100'
                 : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
             }`}
           >
-            <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+            <ImageIcon className="w-4 h-4 shrink-0" />
             <span className="truncate">
               {processing ? '...' : lang === 'am' ? 'ከጋለሪ ምረጥ' : 'Gallery'}
             </span>

@@ -451,58 +451,58 @@ export const StatisticsReportsView: React.FC<StatisticsReportsViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={exporting !== null}
               onClick={() => void runExport('pdf')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] bg-red-700 hover:bg-red-800 disabled:opacity-60 text-white text-xs font-semibold rounded-lg whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-red-700 hover:bg-red-800 disabled:opacity-60 text-white text-xs font-bold rounded-xl whitespace-nowrap transition-colors"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-4 h-4 shrink-0" />
               {exporting === 'pdf' ? '...' : t.exportPdf}
             </button>
             <button
               type="button"
               disabled={exporting !== null}
               onClick={() => void runExport('excel')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-semibold rounded-lg whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-bold rounded-xl whitespace-nowrap transition-colors"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <FileSpreadsheet className="w-4 h-4 shrink-0" />
               {exporting === 'excel' ? '...' : t.exportExcel}
             </button>
             <button
               type="button"
               disabled={exporting !== null}
               onClick={() => void runExport('word')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white text-xs font-semibold rounded-lg whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white text-xs font-bold rounded-xl whitespace-nowrap transition-colors"
             >
-              <FileText className="w-3.5 h-3.5" />
+              <FileText className="w-4 h-4 shrink-0" />
               {exporting === 'word' ? '...' : t.exportWord}
             </button>
             <button
               type="button"
               disabled={exporting !== null}
               onClick={() => void runExport('pptx')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-xs font-semibold rounded-lg whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-xs font-bold rounded-xl whitespace-nowrap transition-colors"
             >
-              <Presentation className="w-3.5 h-3.5" />
+              <Presentation className="w-4 h-4 shrink-0" />
               {exporting === 'pptx' ? '...' : t.exportPpt}
             </button>
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg whitespace-nowrap"
+              className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl whitespace-nowrap transition-colors"
             >
-              <Printer className="w-3.5 h-3.5" />
+              <Printer className="w-4 h-4 shrink-0" />
               {t.exportPrint}
             </button>
           </div>
         </div>
 
         {/* Custom Title + Time Period + Custom Date Range */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-end">
           <div className="lg:col-span-4">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               {t.customTitleLabel}
             </label>
             <input
@@ -511,15 +511,15 @@ export const StatisticsReportsView: React.FC<StatisticsReportsViewProps> = ({
               value={customTitle}
               onChange={(e) => setCustomTitle(e.target.value)}
               placeholder={t.reportTitle}
-              className="w-full px-3 py-2 min-h-[40px] border border-slate-300 rounded-lg text-sm"
+              className="w-full px-3.5 py-2.5 min-h-[44px] border border-slate-300 rounded-xl text-sm"
             />
           </div>
 
           <div className="lg:col-span-4">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               {lang === 'am' ? 'የጊዜ ክልል' : 'Reporting Period'}
             </label>
-            <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
+            <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl">
               {(['weekly', 'monthly', 'yearly', 'all'] as PeriodMode[]).map((mode) => (
                 <button
                   key={mode}
@@ -529,9 +529,9 @@ export const StatisticsReportsView: React.FC<StatisticsReportsViewProps> = ({
                     setDateFrom('');
                     setDateTo('');
                   }}
-                  className={`flex-1 px-2.5 py-1.5 min-h-[34px] text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                  className={`px-2 py-2 min-h-[38px] text-xs font-semibold rounded-lg transition-colors whitespace-nowrap truncate ${
                     !dateFrom && !dateTo && period === mode
-                      ? 'bg-white text-slate-900 shadow-sm font-semibold'
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -542,26 +542,26 @@ export const StatisticsReportsView: React.FC<StatisticsReportsViewProps> = ({
           </div>
 
           <div className="lg:col-span-2">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               {t.dateFromLabel}
             </label>
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full px-2.5 py-2 min-h-[40px] border border-slate-300 rounded-lg text-xs tabular-nums"
+              className="w-full px-3 py-2 min-h-[44px] border border-slate-300 rounded-xl text-xs tabular-nums"
             />
           </div>
 
           <div className="lg:col-span-2">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               {t.dateToLabel}
             </label>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="w-full px-2.5 py-2 min-h-[40px] border border-slate-300 rounded-lg text-xs tabular-nums"
+              className="w-full px-3 py-2 min-h-[44px] border border-slate-300 rounded-xl text-xs tabular-nums"
             />
           </div>
         </div>
@@ -575,7 +575,7 @@ export const StatisticsReportsView: React.FC<StatisticsReportsViewProps> = ({
               setWoredaFilter('');
               setKebeleFilter('');
             }}
-            className="px-3 py-2 min-h-[40px] border border-slate-300 rounded-lg text-sm bg-white"
+            className="px-3.5 py-2.5 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white"
           >
             <option value="">{t.allCities}</option>
             {cities.map((c) => (
@@ -591,7 +591,7 @@ export const StatisticsReportsView: React.FC<StatisticsReportsViewProps> = ({
               setWoredaFilter(e.target.value);
               setKebeleFilter('');
             }}
-            className="px-3 py-2 min-h-[40px] border border-slate-300 rounded-lg text-sm bg-white"
+            className="px-3.5 py-2.5 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white"
           >
             <option value="">{t.allWoredas}</option>
             {woredas.map((w) => (
@@ -604,7 +604,7 @@ export const StatisticsReportsView: React.FC<StatisticsReportsViewProps> = ({
           <select
             value={kebeleFilter}
             onChange={(e) => setKebeleFilter(e.target.value)}
-            className="px-3 py-2 min-h-[40px] border border-slate-300 rounded-lg text-sm bg-white"
+            className="px-3.5 py-2.5 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white"
           >
             <option value="">{t.allKebeles}</option>
             {kebeles.map((k) => (
@@ -617,7 +617,7 @@ export const StatisticsReportsView: React.FC<StatisticsReportsViewProps> = ({
           <select
             value={crimeStatusFilter}
             onChange={(e) => setCrimeStatusFilter(e.target.value as 'all' | RecordType)}
-            className="px-3 py-2 min-h-[40px] border border-slate-300 rounded-lg text-sm bg-white"
+            className="px-3.5 py-2.5 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white"
           >
             <option value="all">{t.recordStatusFilterLabel}: {t.filterAll}</option>
             <option value="suspect">{t.statusSuspect}</option>

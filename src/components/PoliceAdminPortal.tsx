@@ -116,6 +116,8 @@ interface PoliceAdminPortalProps {
   lang: Lang;
   onToggleLang: () => void;
   firebaseUid: string;
+  policeVaultKey: string;
+  isFirebasePolice?: boolean;
   mode: 'admin' | 'police';
   actorName: string;
   actorEmail?: string;
@@ -168,6 +170,8 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   lang,
   onToggleLang,
   firebaseUid,
+  policeVaultKey,
+  isFirebasePolice = false,
   mode,
   actorName,
   adminUsername,
@@ -350,17 +354,20 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       return unsub;
     }
 
-    const unsub = subscribePoliceData((data) => {
-      setOfficers(data.officers);
-      setLandlords(data.landlords);
-      setTenants(data.tenants);
-      setWantedPersons(data.wantedPersons);
-      setWantedAlerts(data.wantedAlerts);
-      setCriminalRecords(data.criminalRecords);
-      setHistory(data.history);
-    });
+    const unsub = subscribePoliceData(
+      (data) => {
+        setOfficers(data.officers);
+        setLandlords(data.landlords);
+        setTenants(data.tenants);
+        setWantedPersons(data.wantedPersons);
+        setWantedAlerts(data.wantedAlerts);
+        setCriminalRecords(data.criminalRecords);
+        setHistory(data.history);
+      },
+      { policeVaultKey, includeLegacyRootVault: isFirebasePolice }
+    );
     return unsub;
-  }, [isCloudConnected, isAdmin]);
+  }, [isCloudConnected, isAdmin, policeVaultKey, isFirebasePolice]);
 
   useEffect(() => {
     if (!isAdmin || !isCloudConnected) return;
@@ -386,30 +393,41 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         const matchReason = checkWantedMatch(w, ten);
         if (matchReason) {
           if (isCloudConnected) {
-            void createWantedAlertIfMissing(firebaseUid, wantedAlerts, w, ten, matchReason);
+            void createWantedAlertIfMissing(
+              firebaseUid,
+              wantedAlerts,
+              w,
+              ten,
+              matchReason,
+              policeVaultKey
+            );
           } else {
             void createFallbackWantedAlertIfMissing(firebaseUid, w, ten, matchReason);
           }
         }
       }
     }
-  }, [wantedPersons, tenants, wantedAlerts, firebaseUid, isCloudConnected]);
+  }, [wantedPersons, tenants, wantedAlerts, firebaseUid, isCloudConnected, policeVaultKey]);
 
   const matchesOfficerScope = (item: { city: string; woreda: string; kebele: string }) => {
     if (isAdmin || !officer || officer.jurisdictionLevel === 'regional') return true;
+    const offCity = normalizeText(officer.city);
+    const offWoreda = normalizeText(officer.woreda);
+    const offKebele = normalizeText(officer.kebele);
+    const itemCity = normalizeText(item.city);
+    const itemWoreda = normalizeText(item.woreda);
+    const itemKebele = normalizeText(item.kebele);
+
     if (officer.jurisdictionLevel === 'city') {
-      return !officer.city || item.city === officer.city;
+      return !offCity || itemCity === offCity;
     }
     if (officer.jurisdictionLevel === 'woreda') {
-      return (
-        (!officer.city || item.city === officer.city) &&
-        (!officer.woreda || item.woreda === officer.woreda)
-      );
+      return (!offCity || itemCity === offCity) && (!offWoreda || itemWoreda === offWoreda);
     }
     return (
-      (!officer.city || item.city === officer.city) &&
-      (!officer.woreda || item.woreda === officer.woreda) &&
-      (!officer.kebele || item.kebele === officer.kebele)
+      (!offCity || itemCity === offCity) &&
+      (!offWoreda || itemWoreda === offWoreda) &&
+      (!offKebele || itemKebele === offKebele)
     );
   };
 
@@ -904,7 +922,13 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         kebele: officer?.kebele || 'ቀበሌ 01',
       };
       if (isCloudConnected) {
-        await createWantedPerson(firebaseUid, actorName, officer?.officerId, payload);
+        await createWantedPerson(
+          firebaseUid,
+          actorName,
+          officer?.officerId,
+          payload,
+          policeVaultKey
+        );
       } else {
         await createFallbackWantedPerson(firebaseUid, actorName, officer?.officerId, payload);
       }
@@ -943,7 +967,13 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         incidentDate: susDate,
       };
       if (isCloudConnected) {
-        await createCriminalRecord(firebaseUid, actorName, officer?.officerId, payload);
+        await createCriminalRecord(
+          firebaseUid,
+          actorName,
+          officer?.officerId,
+          payload,
+          policeVaultKey
+        );
       } else {
         await createFallbackCriminalRecord(firebaseUid, actorName, officer?.officerId, payload);
       }
@@ -1018,7 +1048,13 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       };
       if (editingCriminalRecordId) {
         if (isCloudConnected) {
-          await updateCriminalRecord(firebaseUid, actorName, editingCriminalRecordId, payload);
+          await updateCriminalRecord(
+            firebaseUid,
+            actorName,
+            editingCriminalRecordId,
+            payload,
+            policeVaultKey
+          );
         } else {
           await updateFallbackCriminalRecord(
             firebaseUid,
@@ -1035,7 +1071,13 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         );
       } else {
         if (isCloudConnected) {
-          await createCriminalRecord(firebaseUid, actorName, officer?.officerId, payload);
+          await createCriminalRecord(
+            firebaseUid,
+            actorName,
+            officer?.officerId,
+            payload,
+            policeVaultKey
+          );
         } else {
           await createFallbackCriminalRecord(firebaseUid, actorName, officer?.officerId, payload);
         }
@@ -1115,7 +1157,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
           newPassword: credNewPass || undefined,
         };
         if (isCloudConnected) {
-          await updateOfficerCredentials(firebaseUid, actorName, off, upd);
+          await updateOfficerCredentials(firebaseUid, actorName, off, upd, policeVaultKey);
         } else {
           await updateFallbackOfficerCredentials(firebaseUid, actorName, off, upd);
         }
@@ -1262,7 +1304,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         kebele: offLevel === 'kebele' ? offKebele : '',
       };
       if (isCloudConnected) {
-        await createPoliceOfficer(firebaseUid, payload);
+        await createPoliceOfficer(firebaseUid, payload, policeVaultKey);
       } else {
         await createFallbackPoliceOfficer(firebaseUid, payload);
       }
@@ -1292,7 +1334,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         active: editOffActive,
       };
       if (isCloudConnected) {
-        await updateOfficerCredentials(firebaseUid, actorName, editingOfficer, upd);
+        await updateOfficerCredentials(firebaseUid, actorName, editingOfficer, upd, policeVaultKey);
       } else {
         await updateFallbackOfficerCredentials(firebaseUid, actorName, editingOfficer, upd);
       }
@@ -1356,6 +1398,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         currentPassword: admCurrentPass,
         newUsername: admNewUsername,
         newPassword: admNewPass || undefined,
+        currentPoliceVaultKey: policeVaultKey,
       };
       const updated = isCloudConnected
         ? await updateAdminCredentials(params)
@@ -1378,7 +1421,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     status: 'unread' | 'acknowledged' | 'resolved'
   ) {
     if (isCloudConnected) {
-      await updateAlertStatus(alertId, status);
+      await updateAlertStatus(alertId, status, policeVaultKey);
     } else {
       await updateFallbackAlertStatus(alertId, status);
     }
@@ -1389,7 +1432,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     status: 'active' | 'captured' | 'closed'
   ) {
     if (isCloudConnected) {
-      await updateWantedStatus(wantedId, status);
+      await updateWantedStatus(wantedId, status, policeVaultKey);
     } else {
       await updateFallbackWantedStatus(wantedId, status);
     }
@@ -1397,7 +1440,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
 
   async function handleDeleteWanted(w: WantedPerson) {
     if (isCloudConnected) {
-      await deleteWantedPerson(firebaseUid, actorName, w);
+      await deleteWantedPerson(firebaseUid, actorName, w, policeVaultKey);
     } else {
       await deleteFallbackWantedPerson(firebaseUid, actorName, w);
     }
@@ -1405,7 +1448,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
 
   async function handleCriminalTypeChange(recordId: string, recordType: RecordType) {
     if (isCloudConnected) {
-      await updateCriminalRecordType(recordId, recordType);
+      await updateCriminalRecordType(recordId, recordType, policeVaultKey);
     } else {
       await updateFallbackCriminalRecordType(recordId, recordType);
     }
@@ -1413,7 +1456,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
 
   async function handleDeleteCriminal(c: CriminalRecord) {
     if (isCloudConnected) {
-      await deleteCriminalRecord(firebaseUid, actorName, c);
+      await deleteCriminalRecord(firebaseUid, actorName, c, policeVaultKey);
     } else {
       await deleteFallbackCriminalRecord(firebaseUid, actorName, c);
     }

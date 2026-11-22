@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import {
   ArrowLeft,
   Building2,
@@ -10,23 +9,14 @@ import {
   Lock,
   UserPlus,
 } from 'lucide-react';
-import { db, ROOT_ADMIN_EMAIL } from '../firebase';
 import type {
   ActivePortalSession,
   BrandingSetting,
   Jurisdiction,
-  Landlord,
-  PoliceOfficer,
 } from '../types';
 import {
-  normalizePhone,
-  phonesMatch,
-  verifyPassword,
-} from '../utils/crypto';
-import {
-  ensureAdminCredentialsSeeded,
   registerLandlord,
-  syncFallbackRecordsToCloud,
+  verifyFirestoreAccountLogin,
 } from '../services/firestoreService';
 import { registerFallbackLandlord, verifyFallbackLogin } from '../utils/localFallback';
 import {
@@ -222,13 +212,8 @@ type AuthMode = 'login' | 'register';
 export const LoginPortal: React.FC<LoginPortalProps> = ({
   lang,
   onToggleLang,
-  firebaseUser,
-  isFirebaseAdmin,
-  isFirebasePolice,
-  domainFallbackActive,
   branding,
   jurisdictions,
-  onSignInGoogle,
   onEnterSession,
 }) => {
   const t = DICT[lang];
@@ -282,6 +267,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   // Landlord Self-Registration State (Region -> Zone -> City -> Woreda -> Kebele)
   const [regName, setRegName] = useState('');
   const [regPhone, setRegPhone] = useState('');
+  const [regUsername, setRegUsername] = useState('');
   const [regRegion, setRegRegion] = useState(DEFAULT_REGION_NAME);
   const [regZone, setRegZone] = useState('');
   const [regCity, setRegCity] = useState('');
@@ -373,58 +359,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     [jurisdictions, regRegion, regZone, regCity, regWoreda]
   );
 
-  async function resolveAccountPrivileges(user: User): Promise<{ isAdmin: boolean; isPolice: boolean }> {
-    const email = (user.email || '').toLowerCase();
-    let isAdmin = isFirebaseAdmin || (user.emailVerified && email === ROOT_ADMIN_EMAIL);
-    if (!isAdmin && user.emailVerified) {
-      try {
-        const adminSnap = await getDoc(doc(db, 'admins', user.uid));
-        isAdmin = adminSnap.exists();
-      } catch {
-        isAdmin = false;
-      }
-    }
-    let isPolice = isAdmin || isFirebasePolice;
-    if (!isPolice && user.emailVerified && email) {
-      try {
-        const polSnap = await getDoc(doc(db, 'police_emails', email));
-        isPolice = polSnap.exists();
-      } catch {
-        isPolice = false;
-      }
-    }
-    return { isAdmin, isPolice };
-  }
-
-  async function attemptFallbackSignIn(rawId: string, pass: string) {
-    const fb = await verifyFallbackLogin(rawId, pass);
-    if (fb.ok) {
-      setFailedAttempts(0);
-      setLockoutUntilMs(0);
-      onEnterSession(fb.session, fb.uid);
-      return;
-    }
-    if (fb.reason === 'suspended') {
-      setErrorMsg(
-        lang === 'am'
-          ? 'ይህ የፖሊስ መለያ ታግዷል። እባክዎ አድሚንን ያነጋግሩ።'
-          : 'This police account is suspended.'
-      );
-      return;
-    }
-    if (fb.reason === 'invalid_password') {
-      registerFailedLoginAttempt(
-        lang === 'am' ? 'የገባው የይለፍ ቃል ትክክል አይደለም።' : 'Incorrect password.'
-      );
-      return;
-    }
-    registerFailedLoginAttempt(
-      lang === 'am'
-        ? 'በዚህ ዩዘርኔም ወይም ስልክ ቁጥር የተመዘገበ መለያ አልተገኘም። አዲስ አከራይ ከሆኑ መጀመሪያ ይመዝገቡ።'
-        : 'No matching account found. If you are a new landlord, please register first.'
-    );
-  }
-
   async function handleUnifiedLogin(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg('');
@@ -449,170 +383,43 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
     setBusy(true);
     try {
-      // If domainFallbackActive is already detected from auth/unauthorized-domain, authenticate directly
-      if (domainFallbackActive && (!firebaseUser || !firebaseUser.emailVerified)) {
-        await attemptFallbackSignIn(rawId, password);
+      const cloudRes = await verifyFirestoreAccountLogin(rawId, password);
+      if (cloudRes.ok) {
+        setFailedAttempts(0);
+        setLockoutUntilMs(0);
+        onEnterSession(cloudRes.session, cloudRes.uid);
+        return;
+      }
+      if (cloudRes.reason === 'suspended') {
+        setErrorMsg(
+          lang === 'am'
+            ? 'ይህ መለያ ታግዷል። እባክዎ አድሚንን ያነጋግሩ።'
+            : 'This account is suspended. Please contact Admin.'
+        );
+        return;
+      }
+      if (cloudRes.reason === 'invalid_password') {
+        registerFailedLoginAttempt(
+          lang === 'am'
+            ? 'የገባው የይለፍ ቃል ትክክል አይደለም። የይለፍ ቃል ከጠፋብዎ ፖሊስ ወይም አድሚንን ያነጋግሩ።'
+            : 'Incorrect password.'
+        );
         return;
       }
 
-      let activeUser = firebaseUser;
-      if (!activeUser || !activeUser.emailVerified) {
-        const res = await onSignInGoogle();
-        if (res.unauthorizedDomain) {
-          await attemptFallbackSignIn(rawId, password);
-          return;
-        }
-        if (!res.ok || !res.user) {
-          setErrorMsg(
-            res.error ||
-              (lang === 'am'
-                ? 'መግባት አልተጠናቀቀም። እባክዎ እንደገና ይሞክሩ።'
-                : 'Sign-in was not completed. Please try again.')
-          );
-          return;
-        }
-        activeUser = res.user;
+      // Check local fallback cache only if not yet present in Firestore
+      const fbCheck = await verifyFallbackLogin(rawId, password);
+      if (fbCheck.ok) {
+        setFailedAttempts(0);
+        setLockoutUntilMs(0);
+        onEnterSession(fbCheck.session, fbCheck.uid);
+        return;
       }
-
-      let { isAdmin, isPolice } = await resolveAccountPrivileges(activeUser);
-
-      // 1. Check Admin Credentials (if user has admin privileges)
-      if (isAdmin) {
-        try {
-          const cred = await ensureAdminCredentialsSeeded(activeUser.uid);
-          if (rawId === cred.username) {
-            const passOk = await verifyPassword(password, cred.passwordSalt, cred.passwordHash);
-            if (passOk) {
-              setFailedAttempts(0);
-              setLockoutUntilMs(0);
-              onEnterSession({
-                role: 'admin',
-                displayName: activeUser.displayName || 'ክልል ዋና አድሚን',
-                email: activeUser.email || ROOT_ADMIN_EMAIL,
-                adminUsername: cred.username,
-              });
-              return;
-            }
-            registerFailedLoginAttempt(
-              lang === 'am' ? 'የገባው የይለፍ ቃል ትክክል አይደለም።' : 'Incorrect password.'
-            );
-            return;
-          }
-        } catch {
-          // Continue to officer/landlord resolution
-        }
-      }
-
-      // 2. Check Police Officer Credentials (if user has police/admin privileges)
-      if (isPolice) {
-        const officerSnap = await getDocs(
-          query(collection(db, 'police_officers'), where('username', '==', rawId))
+      if (fbCheck.reason === 'invalid_password') {
+        registerFailedLoginAttempt(
+          lang === 'am' ? 'የገባው የይለፍ ቃል ትክክል አይደለም።' : 'Incorrect password.'
         );
-        if (!officerSnap.empty) {
-          const officer = officerSnap.docs[0].data() as PoliceOfficer;
-          if (!officer.active) {
-            setErrorMsg(
-              lang === 'am'
-                ? 'ይህ የፖሊስ መለያ ታግዷል። እባክዎ አድሚንን ያነጋግሩ።'
-                : 'This police account is suspended.'
-            );
-            return;
-          }
-          const ok = await verifyPassword(password, officer.passwordSalt, officer.passwordHash);
-          if (ok) {
-            setFailedAttempts(0);
-            setLockoutUntilMs(0);
-            onEnterSession({ role: 'police', officer });
-            return;
-          }
-          registerFailedLoginAttempt(
-            lang === 'am' ? 'የገባው የይለፍ ቃል ትክክል አይደለም።' : 'Incorrect password.'
-          );
-          return;
-        }
-      }
-
-      // 3. Check Landlord Credentials (by phone / username across +251 / 09 / 9 formatting)
-      const phone = normalizePhone(rawId);
-      if (phone) {
-        const landlordSnap = await getDocs(
-          isPolice
-            ? collection(db, 'landlords')
-            : query(collection(db, 'landlords'), where('ownerUid', '==', activeUser.uid))
-        );
-        const candidates = landlordSnap.docs
-          .map((d) => d.data() as Landlord)
-          .filter((l) => phonesMatch(l.phone, rawId) && l.status === 'active');
-
-        for (const landlord of candidates) {
-          const ok = await verifyPassword(password, landlord.passwordSalt, landlord.passwordHash);
-          if (ok) {
-            setFailedAttempts(0);
-            setLockoutUntilMs(0);
-            onEnterSession({ role: 'landlord', landlord });
-            return;
-          }
-        }
-        if (candidates.length > 0) {
-          registerFailedLoginAttempt(
-            lang === 'am'
-              ? 'የገባው የይለፍ ቃል ትክክል አይደለም። የይለፍ ቃል ከጠፋብዎ ፖሊስ ወይም አድሚንን ያነጋግሩ።'
-              : 'Incorrect password. Please contact Police or Admin if you forgot your password.'
-          );
-          return;
-        }
-
-        // Check fallback store if user registered earlier on an unauthorized domain and just connected Google
-        const fbCheck = await verifyFallbackLogin(rawId, password);
-        if (fbCheck.ok && fbCheck.session.role === 'landlord') {
-          await syncFallbackRecordsToCloud({
-            uid: activeUser.uid,
-            isAdmin,
-            isPolice,
-          }).catch(() => undefined);
-          setFailedAttempts(0);
-          setLockoutUntilMs(0);
-          onEnterSession({
-            role: 'landlord',
-            landlord: { ...fbCheck.session.landlord, ownerUid: activeUser.uid },
-          });
-          return;
-        }
-        if (fbCheck.ok === false && fbCheck.reason === 'invalid_password') {
-          registerFailedLoginAttempt(
-            lang === 'am' ? 'የገባው የይለፍ ቃል ትክክል አይደለም።' : 'Incorrect password.'
-          );
-          return;
-        }
-      }
-
-      // 4. Fallback if someone typed 'admin' under a different signed-in email
-      if (!isAdmin && rawId === 'admin') {
-        const reauth = await onSignInGoogle();
-        if (reauth.unauthorizedDomain) {
-          await attemptFallbackSignIn(rawId, password);
-          return;
-        }
-        if (reauth.ok && reauth.user) {
-          const nextPrivs = await resolveAccountPrivileges(reauth.user);
-          isAdmin = nextPrivs.isAdmin;
-          isPolice = nextPrivs.isPolice;
-          if (isAdmin) {
-            const cred = await ensureAdminCredentialsSeeded(reauth.user.uid);
-            const passOk = await verifyPassword(password, cred.passwordSalt, cred.passwordHash);
-            if (rawId === cred.username && passOk) {
-              setFailedAttempts(0);
-              setLockoutUntilMs(0);
-              onEnterSession({
-                role: 'admin',
-                displayName: reauth.user.displayName || 'ክልል ዋና አድሚን',
-                email: reauth.user.email || ROOT_ADMIN_EMAIL,
-                adminUsername: cred.username,
-              });
-              return;
-            }
-          }
-        }
+        return;
       }
 
       registerFailedLoginAttempt(
@@ -621,6 +428,13 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
           : 'No matching account found. If you are a new landlord, please register first.'
       );
     } catch (err) {
+      const fbCheck = await verifyFallbackLogin(rawId, password).catch(() => null);
+      if (fbCheck && fbCheck.ok) {
+        setFailedAttempts(0);
+        setLockoutUntilMs(0);
+        onEnterSession(fbCheck.session, fbCheck.uid);
+        return;
+      }
       setErrorMsg(err instanceof Error ? err.message : 'መግባት አልተቻለም');
     } finally {
       setBusy(false);
@@ -671,63 +485,40 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
     setBusy(true);
     try {
-      let useFallback = domainFallbackActive && (!firebaseUser || !firebaseUser.emailVerified);
-      let activeUser = firebaseUser;
-      if (!useFallback && (!activeUser || !activeUser.emailVerified)) {
-        const res = await onSignInGoogle();
-        if (res.unauthorizedDomain) {
-          useFallback = true;
-        } else if (!res.ok || !res.user) {
-          setErrorMsg(
-            res.error ||
-              (lang === 'am'
-                ? 'ምዝገባውን ማጠናቀቅ አልተቻለም። እባክዎ እንደገና ይሞክሩ።'
-                : 'Could not complete registration. Please try again.')
-          );
-          return;
+      const regPayload = {
+        fullName: regName,
+        phone: regPhone,
+        username: regUsername.trim() || undefined,
+        region: regRegion,
+        zone: regZone,
+        city: regCity,
+        woreda: regWoreda,
+        kebele: regKebele,
+        houseNumber: regHouseNo,
+        roomCount: Number(regRoomCount) || 1,
+        faydaId: regFaydaId,
+        idFrontImage: regIdFront,
+        idBackImage: regIdBack,
+        password: regPassword,
+      };
+
+      try {
+        await registerLandlord('', regPayload);
+      } catch (cloudErr) {
+        const msg = cloudErr instanceof Error ? cloudErr.message : String(cloudErr);
+        // If offline / network failure, save locally so user isn't blocked; duplicate phone/username errors bubble directly
+        if (msg.includes('offline') || msg.includes('network')) {
+          await registerFallbackLandlord('', regPayload);
         } else {
-          activeUser = res.user;
+          throw cloudErr;
         }
       }
 
-      if (useFallback) {
-        await registerFallbackLandlord('', {
-          fullName: regName,
-          phone: regPhone,
-          region: regRegion,
-          zone: regZone,
-          city: regCity,
-          woreda: regWoreda,
-          kebele: regKebele,
-          houseNumber: regHouseNo,
-          roomCount: Number(regRoomCount) || 1,
-          faydaId: regFaydaId,
-          idFrontImage: regIdFront,
-          idBackImage: regIdBack,
-          password: regPassword,
-        });
-      } else if (activeUser) {
-        await registerLandlord(activeUser.uid, {
-          fullName: regName,
-          phone: regPhone,
-          region: regRegion,
-          zone: regZone,
-          city: regCity,
-          woreda: regWoreda,
-          kebele: regKebele,
-          houseNumber: regHouseNo,
-          roomCount: Number(regRoomCount) || 1,
-          faydaId: regFaydaId,
-          idFrontImage: regIdFront,
-          idBackImage: regIdBack,
-          password: regPassword,
-        });
-      }
-
-      setIdentifier(regPhone);
+      setIdentifier(regUsername.trim() || regPhone);
       setPassword('');
       setRegName('');
       setRegPhone('');
+      setRegUsername('');
       setRegHouseNo('');
       setRegFaydaId('');
       setRegIdFront('');
@@ -737,8 +528,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       setMode('login');
       setSuccessMsg(
         lang === 'am'
-          ? 'የአከራይ ምዝገባዎ በተሳካ ሁኔታ ተጠናቋል። አሁን በስልክ ቁጥርዎና በይለፍ ቃልዎ ሎጊን ብለው ይግቡ።'
-          : 'Landlord registration completed. Please sign in using your phone number and password.'
+          ? 'የአከራይ ምዝገባዎ በFirestore Cloud ላይ በተሳካ ሁኔታ ተመዝግቧል። አሁን በማንኛውም ስልክ ወይም ኮምፒውተር በዩዘርኔም/ስልክ ቁጥርዎ እና በይለፍ ቃልዎ ሎጊን ብለው ይግቡ።'
+          : 'Landlord registration saved to Firestore Cloud. You can now log in from any phone or computer with your username/phone and password.'
       );
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'ምዝገባው አልተሳካም');
@@ -973,7 +764,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <div>
                   <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
                     {t.fullNameLabel}
@@ -1000,6 +791,19 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     onChange={(e) => setRegPhone(e.target.value)}
                     placeholder="09..."
                     className="w-full px-3.5 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold placeholder:text-slate-300/70 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
+                    {t.usernameOptionalLabel}
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={regUsername}
+                    onChange={(e) => setRegUsername(e.target.value)}
+                    placeholder={t.usernameOptionalPlaceholder}
+                    className="w-full px-3.5 py-2.5 min-h-[46px] border border-cyan-200/35 bg-slate-950/65 text-slate-50 font-semibold placeholder:text-slate-300/70 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
                   />
                 </div>
               </div>

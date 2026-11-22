@@ -123,6 +123,39 @@
         "updatedAt"
       ]
     },
+    "AuthAccount": {
+      "title": "AuthAccount",
+      "description": "Zero-PII credential lookup and encrypted capability vault record for cross-device login.",
+      "type": "object",
+      "properties": {
+        "accountKey": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "role": { "type": "string", "enum": ["admin", "police", "landlord"] },
+        "targetId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "maxLength": 60 },
+        "passwordHash": { "type": "string", "maxLength": 128 },
+        "passwordSalt": { "type": "string", "maxLength": 64 },
+        "vaultSalt": { "type": "string", "maxLength": 64 },
+        "encryptedVault": { "type": "string", "maxLength": 4096 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "accountKey",
+        "role",
+        "targetId",
+        "ownerUid",
+        "username",
+        "passwordHash",
+        "passwordSalt",
+        "vaultSalt",
+        "encryptedVault",
+        "active",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
     "Landlord": {
       "title": "Landlord",
       "description": "Registered property owner / landlord with Fayda ID and jurisdiction address.",
@@ -132,6 +165,7 @@
         "ownerUid": { "type": "string", "maxLength": 128 },
         "fullName": { "type": "string", "maxLength": 150 },
         "phone": { "type": "string", "maxLength": 30 },
+        "username": { "type": "string", "maxLength": 60 },
         "region": { "type": "string", "maxLength": 100 },
         "zone": { "type": "string", "maxLength": 100 },
         "city": { "type": "string", "maxLength": 100 },
@@ -455,6 +489,34 @@
     "/activity_history/{historyId}": {
       "schema": { "$ref": "#/entities/ActivityHistory" },
       "description": "Immutable chronological audit log of all system events."
+    },
+    "/auth_accounts/{accountKey}": {
+      "schema": { "$ref": "#/entities/AuthAccount" },
+      "description": "Non-enumerable zero-PII credential lookup and encrypted capability vault."
+    },
+    "/landlord_workspaces/{workspaceKey}/properties/{landlordId}": {
+      "schema": { "$ref": "#/entities/Landlord" },
+      "description": "Per-landlord isolated properties mirror."
+    },
+    "/landlord_workspaces/{workspaceKey}/tenants/{tenantId}": {
+      "schema": { "$ref": "#/entities/Tenant" },
+      "description": "Per-landlord isolated tenants mirror."
+    },
+    "/landlord_workspaces/{workspaceKey}/history/{historyId}": {
+      "schema": { "$ref": "#/entities/ActivityHistory" },
+      "description": "Per-landlord isolated immutable activity history mirror."
+    },
+    "/police_vaults/{vaultKey}/wanted_persons/{wantedId}": {
+      "schema": { "$ref": "#/entities/WantedPerson" },
+      "description": "Cryptographically isolated Police-only wanted persons watch-list."
+    },
+    "/police_vaults/{vaultKey}/wanted_alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/WantedAlert" },
+      "description": "Cryptographically isolated Police-only wanted match alerts."
+    },
+    "/police_vaults/{vaultKey}/criminal_records/{recordId}": {
+      "schema": { "$ref": "#/entities/CriminalRecord" },
+      "description": "Cryptographically isolated Police-only criminal and arrest records."
     }
   }
 }

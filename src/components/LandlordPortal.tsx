@@ -51,6 +51,7 @@ interface LandlordPortalProps {
   lang: Lang;
   onToggleLang: () => void;
   firebaseUid: string;
+  workspaceSecret: string;
   initialLandlord: Landlord;
   branding: BrandingSetting;
   jurisdictions: Jurisdiction[];
@@ -65,6 +66,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
   lang,
   onToggleLang,
   firebaseUid,
+  workspaceSecret,
   initialLandlord,
   branding,
   jurisdictions,
@@ -189,7 +191,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
       });
     }
 
-    const unsub = subscribeLandlordOwnData(firebaseUid, (data) => {
+    const unsub = subscribeLandlordOwnData(firebaseUid, workspaceSecret, (data) => {
       if (data.landlords.length > 0) {
         setOwnedLandlords(data.landlords.filter((l) => l.status === 'active'));
       }
@@ -203,7 +205,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
       setHistory(sortedHistory);
     });
     return unsub;
-  }, [firebaseUid, isCloudConnected]);
+  }, [firebaseUid, workspaceSecret, isCloudConnected]);
 
   const selectedReplacedTenant = useMemo(
     () => tenants.find((item) => item.tenantId === replacedTenantId),
@@ -337,7 +339,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         replacedTenant: entryMode === 'replace_tenant' ? selectedReplacedTenant : undefined,
       };
       if (isCloudConnected) {
-        await registerTenant(firebaseUid, landlord, tenantPayload);
+        await registerTenant(firebaseUid, landlord, tenantPayload, 'landlord', workspaceSecret);
       } else {
         await registerFallbackTenant(firebaseUid, landlord, tenantPayload);
       }
@@ -381,7 +383,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         phone: addrPhone,
       };
       if (isCloudConnected) {
-        await updateLandlordAddress(firebaseUid, landlord, addressUpdates);
+        await updateLandlordAddress(firebaseUid, landlord, addressUpdates, workspaceSecret);
       } else {
         await updateFallbackLandlordAddress(firebaseUid, landlord, addressUpdates);
       }
@@ -403,7 +405,7 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     setSuccessMsg('');
     try {
       if (isCloudConnected) {
-        await markTenantMovedOut(firebaseUid, 'landlord', landlord.fullName, item);
+        await markTenantMovedOut(firebaseUid, 'landlord', landlord.fullName, item, workspaceSecret);
       } else {
         await markFallbackTenantMovedOut(firebaseUid, 'landlord', landlord.fullName, item);
       }
@@ -471,7 +473,13 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
         password: newPropPass,
       };
       const created = isCloudConnected
-        ? await registerLandlord(firebaseUid, propPayload, 'landlord', landlord.fullName)
+        ? await registerLandlord(
+            firebaseUid,
+            propPayload,
+            'landlord',
+            landlord.fullName,
+            workspaceSecret
+          )
         : await registerFallbackLandlord(firebaseUid, propPayload, 'landlord', landlord.fullName);
       setSelectedLandlordId(created.landlordId);
       setNewPropHouseNo('');

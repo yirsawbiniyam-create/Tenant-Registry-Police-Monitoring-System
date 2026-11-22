@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -13,11 +14,13 @@ import {
   where,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import type {
+  ActivePortalSession,
   ActivityActionType,
   ActivityHistory,
   AdminCredential,
+  AuthAccount,
   BrandingSetting,
   CriminalRecord,
   Jurisdiction,
@@ -29,13 +32,18 @@ import type {
 } from '../types';
 import { FIELD_LIMITS } from '../types';
 import {
+  canonicalPhoneDigits,
   createValidId,
+  decryptVaultJson,
+  encryptVaultJson,
   generateSalt,
+  generateVaultKey,
   hashPassword,
   normalizePhone,
   normalizeText,
   phonesMatch,
   sanitizeImageSrc,
+  sha256Hex,
   verifyPassword,
 } from '../utils/crypto';
 import { getFallbackSnapshot, markFallbackIdsSynced } from '../utils/localFallback';
@@ -52,6 +60,27 @@ import {
   resolveRegionalFlagSrc,
 } from '../utils/seedData';
 
+const ADMIN_CRED_DOC_ID = 'primary';
+const ADMIN_AUTH_ACCOUNT_KEY = 'adm_primary';
+
+let adminSeedPromise: Promise<AdminCredential> | null = null;
+let jurisdictionSeedPromise: Promise<void> | null = null;
+
+interface AdminVaultPayload {
+  policeVaultKey: string;
+}
+
+interface PoliceVaultPayload {
+  officerId: string;
+  policeVaultKey: string;
+}
+
+interface LandlordVaultPayload {
+  ownerUid: string;
+  workspaceSecret: string;
+  landlordId: string;
+}
+
 function assertSafeImageDataUrl(val: string | undefined, maxLen: number, required = false): string {
   const safe = sanitizeImageSrc(val);
   if (!safe) {
@@ -64,6 +93,33 @@ function assertSafeImageDataUrl(val: string | undefined, maxLen: number, require
     throw new Error('የምስሉ መጠን ከተፈቀደው ገደብ በላይ ነው።');
   }
   return safe;
+}
+
+async function getPoliceAccountKey(username: string): Promise<string> {
+  const digest = await sha256Hex(username.trim().toLowerCase());
+  return `pol_${digest}`;
+}
+
+async function getLandlordPhoneAccountKey(phone: string): Promise<string> {
+  const canon = canonicalPhoneDigits(phone) || normalizePhone(phone);
+  const digest = await sha256Hex(canon);
+  return `ll_p_${digest}`;
+}
+
+async function getLandlordUsernameAccountKey(username: string): Promise<string> {
+  const digest = await sha256Hex(username.trim().toLowerCase());
+  return `ll_u_${digest}`;
+}
+
+function isValidVaultKeyClient(key?: string): key is string {
+  return Boolean(key && key.length >= 48 && key.length <= 128 && /^[a-zA-Z0-9_\-]+$/.test(key));
+}
+
+function mergeById<T>(primary: T[], secondary: T[], getId: (item: T) => string): T[] {
+  const map = new Map<string, T>();
+  secondary.forEach((item) => map.set(getId(item), item));
+  primary.forEach((item) => map.set(getId(item), item));
+  return Array.from(map.values());
 }
 
 export function subscribeBranding(
@@ -126,7 +182,7 @@ export async function saveBranding(
       commissionName: payload.commissionName.slice(0, 200),
       subtitle: payload.subtitle.slice(0, 200),
       logoDataUrl: safeLogo,
-      updatedByUid: uid,
+      updatedByUid: uid || ADMIN_AUTH_ACCOUNT_KEY,
       updatedAt: serverTimestamp(),
     };
     if (safeRegionalFlag) docPayload.regionalFlagDataUrl = safeRegionalFlag;
@@ -139,7 +195,7 @@ export async function saveBranding(
       await setDoc(ref, docPayload);
     }
     await logActivity({
-      actorUid: uid,
+      actorUid: uid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'admin',
       actorName: 'ክልል ዋና አድሚን',
       actionType: 'logo_updated',
@@ -156,45 +212,161 @@ export async function saveBranding(
   }
 }
 
-const ADMIN_CRED_DOC_ID = 'primary';
+export async function bootstrapAdminAuthAccount(
+  username = 'admin',
+  password = 'admin',
+  ownerUid = ADMIN_AUTH_ACCOUNT_KEY
+): Promise<{ account: AuthAccount; policeVaultKey: string }> {
+  const ref = doc(db, 'auth_accounts', ADMIN_AUTH_ACCOUNT_KEY);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const existing = snap.data() as AuthAccount;
+    const vault = await decryptVaultJson<AdminVaultPayload>(
+      existing.encryptedVault,
+      existing.vaultSalt,
+      password
+    );
+    return { account: existing, policeVaultKey: vault.policeVaultKey };
+  }
+
+  const policeVaultKey = generateVaultKey();
+  const passwordSalt = generateSalt();
+  const passwordHash = await hashPassword(password, passwordSalt);
+  const { vaultSalt, encryptedVault } = await encryptVaultJson(
+    { policeVaultKey } satisfies AdminVaultPayload,
+    password
+  );
+
+  const payload: Record<string, unknown> = {
+    accountKey: ADMIN_AUTH_ACCOUNT_KEY,
+    role: 'admin',
+    targetId: ADMIN_CRED_DOC_ID,
+    ownerUid: ownerUid || ADMIN_AUTH_ACCOUNT_KEY,
+    username,
+    passwordHash,
+    passwordSalt,
+    vaultSalt,
+    encryptedVault,
+    active: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(ref, payload);
+  const freshSnap = await getDoc(ref);
+  return {
+    account: (freshSnap.exists() ? freshSnap.data() : payload) as AuthAccount,
+    policeVaultKey,
+  };
+}
 
 export async function ensureAdminCredentialsSeeded(adminUid: string): Promise<AdminCredential> {
-  const path = `admin_credentials/${ADMIN_CRED_DOC_ID}`;
-  try {
-    const ref = doc(db, 'admin_credentials', ADMIN_CRED_DOC_ID);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      return snap.data() as AdminCredential;
+  if (adminSeedPromise) return adminSeedPromise;
+  adminSeedPromise = (async () => {
+    const path = `auth_accounts/${ADMIN_AUTH_ACCOUNT_KEY}`;
+    try {
+      const authRef = doc(db, 'auth_accounts', ADMIN_AUTH_ACCOUNT_KEY);
+      const authSnap = await getDoc(authRef);
+      if (authSnap.exists()) {
+        const acc = authSnap.data() as AuthAccount;
+        return {
+          credId: ADMIN_CRED_DOC_ID,
+          username: acc.username,
+          passwordHash: acc.passwordHash,
+          passwordSalt: acc.passwordSalt,
+          isDefaultPassword: acc.username === 'admin',
+          updatedByUid: acc.ownerUid,
+          createdAt: acc.createdAt,
+          updatedAt: acc.updatedAt,
+        };
+      }
+
+      // Legacy sync only when a verified Google user is signed in
+      let legacyCred: AdminCredential | null = null;
+      if (auth.currentUser?.emailVerified) {
+        try {
+          const legacySnap = await getDoc(doc(db, 'admin_credentials', ADMIN_CRED_DOC_ID));
+          if (legacySnap.exists()) {
+            legacyCred = legacySnap.data() as AdminCredential;
+          }
+        } catch {
+          // Non-Google Admin sessions cannot read legacy admin_credentials directly
+        }
+      }
+
+      if (legacyCred && !legacyCred.isDefaultPassword) {
+        return legacyCred;
+      }
+
+      const { account } = await bootstrapAdminAuthAccount(
+        'admin',
+        'admin',
+        adminUid || ADMIN_AUTH_ACCOUNT_KEY
+      );
+
+      // Best-effort sync to legacy admin_credentials when Google Admin is active
+      if (auth.currentUser?.emailVerified) {
+        try {
+          const legacyRef = doc(db, 'admin_credentials', ADMIN_CRED_DOC_ID);
+          const legacySnap = await getDoc(legacyRef);
+          if (!legacySnap.exists()) {
+            await setDoc(legacyRef, {
+              credId: ADMIN_CRED_DOC_ID,
+              username: account.username,
+              passwordHash: account.passwordHash,
+              passwordSalt: account.passwordSalt,
+              isDefaultPassword: true,
+              updatedByUid: adminUid || ADMIN_AUTH_ACCOUNT_KEY,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        } catch {
+          // Ignore if caller is not Google-authenticated Admin
+        }
+      }
+
+      return {
+        credId: ADMIN_CRED_DOC_ID,
+        username: account.username,
+        passwordHash: account.passwordHash,
+        passwordSalt: account.passwordSalt,
+        isDefaultPassword: true,
+        updatedByUid: account.ownerUid,
+        createdAt: account.createdAt,
+        updatedAt: account.updatedAt,
+      };
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    } finally {
+      adminSeedPromise = null;
     }
-    const salt = generateSalt();
-    const initialSecret = 'admin';
-    const passwordHash = await hashPassword(initialSecret, salt);
-    const payload: Record<string, unknown> = {
-      credId: ADMIN_CRED_DOC_ID,
-      username: 'admin',
-      passwordHash,
-      passwordSalt: salt,
-      isDefaultPassword: true,
-      updatedByUid: adminUid,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-    await setDoc(ref, payload);
-    const freshSnap = await getDoc(ref);
-    return (freshSnap.exists() ? freshSnap.data() : payload) as AdminCredential;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  })();
+  return adminSeedPromise;
 }
 
 export function subscribeAdminCredentials(
   onData: (cred: AdminCredential | null) => void
 ): Unsubscribe {
-  const path = `admin_credentials/${ADMIN_CRED_DOC_ID}`;
+  const path = `auth_accounts/${ADMIN_AUTH_ACCOUNT_KEY}`;
   return onSnapshot(
-    doc(db, 'admin_credentials', ADMIN_CRED_DOC_ID),
+    doc(db, 'auth_accounts', ADMIN_AUTH_ACCOUNT_KEY),
     (snap) => {
-      onData(snap.exists() ? (snap.data() as AdminCredential) : null);
+      if (!snap.exists()) {
+        onData(null);
+        return;
+      }
+      const acc = snap.data() as AuthAccount;
+      onData({
+        credId: ADMIN_CRED_DOC_ID,
+        username: acc.username,
+        passwordHash: acc.passwordHash,
+        passwordSalt: acc.passwordSalt,
+        isDefaultPassword: acc.username === 'admin',
+        updatedByUid: acc.ownerUid,
+        createdAt: acc.createdAt,
+        updatedAt: acc.updatedAt,
+      });
     },
     (err) => {
       handleFirestoreError(err, OperationType.GET, path);
@@ -208,44 +380,96 @@ export async function updateAdminCredentials(params: {
   currentPassword: string;
   newUsername: string;
   newPassword?: string;
+  currentPoliceVaultKey?: string;
 }): Promise<{ username: string }> {
-  const path = `admin_credentials/${ADMIN_CRED_DOC_ID}`;
+  const path = `auth_accounts/${ADMIN_AUTH_ACCOUNT_KEY}`;
   const cleanUsername = params.newUsername.trim().slice(0, 60);
   if (!cleanUsername || !FIELD_LIMITS.USERNAME_PATTERN.test(cleanUsername)) {
     throw new Error('ዩዘርኔም የእንግሊዝኛ ፊደላት፣ ቁጥሮች ወይም (._-) ብቻ መያዝ አለበት።');
   }
 
-  const existingCred = await ensureAdminCredentialsSeeded(params.adminUid);
+  let authSnap = await getDoc(doc(db, 'auth_accounts', ADMIN_AUTH_ACCOUNT_KEY));
+  if (!authSnap.exists()) {
+    if (params.currentPassword === 'admin') {
+      await bootstrapAdminAuthAccount('admin', 'admin', params.adminUid);
+      authSnap = await getDoc(doc(db, 'auth_accounts', ADMIN_AUTH_ACCOUNT_KEY));
+    } else {
+      throw new Error('የአሁኑ የይለፍ ቃል ትክክል አይደለም።');
+    }
+  }
+
+  const acc = authSnap.data() as AuthAccount;
   const currentOk = await verifyPassword(
     params.currentPassword,
-    existingCred.passwordSalt,
-    existingCred.passwordHash
+    acc.passwordSalt,
+    acc.passwordHash
   );
   if (!currentOk) {
     throw new Error('የገባው የአሁኑ የይለፍ ቃል ትክክል አይደለም።');
   }
 
-  let nextSalt = existingCred.passwordSalt;
-  let nextHash = existingCred.passwordHash;
-  if (params.newPassword && params.newPassword.length > 0) {
-    if (params.newPassword.length < 4) {
-      throw new Error('አዲሱ የይለፍ ቃል ቢያንስ 4 ቁምፊ መሆን አለበት።');
+  let policeVaultKey = params.currentPoliceVaultKey || '';
+  try {
+    const vault = await decryptVaultJson<AdminVaultPayload>(
+      acc.encryptedVault,
+      acc.vaultSalt,
+      params.currentPassword
+    );
+    policeVaultKey = vault.policeVaultKey;
+  } catch {
+    if (!policeVaultKey) {
+      policeVaultKey = generateVaultKey();
     }
-    nextSalt = generateSalt();
-    nextHash = await hashPassword(params.newPassword, nextSalt);
   }
 
+  const effectivePassword =
+    params.newPassword && params.newPassword.length > 0
+      ? params.newPassword
+      : params.currentPassword;
+  if (params.newPassword && params.newPassword.length > 0 && params.newPassword.length < 4) {
+    throw new Error('አዲሱ የይለፍ ቃል ቢያንስ 4 ቁምፊ መሆን አለበት።');
+  }
+
+  const nextSalt = generateSalt();
+  const nextHash = await hashPassword(effectivePassword, nextSalt);
+  const { vaultSalt, encryptedVault } = await encryptVaultJson(
+    { policeVaultKey } satisfies AdminVaultPayload,
+    effectivePassword
+  );
+
   try {
-    await updateDoc(doc(db, 'admin_credentials', ADMIN_CRED_DOC_ID), {
+    await updateDoc(doc(db, 'auth_accounts', ADMIN_AUTH_ACCOUNT_KEY), {
       username: cleanUsername,
       passwordHash: nextHash,
       passwordSalt: nextSalt,
-      isDefaultPassword: false,
-      updatedByUid: params.adminUid,
+      vaultSalt,
+      encryptedVault,
+      ownerUid: params.adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       updatedAt: serverTimestamp(),
     });
+
+    // Best-effort sync to legacy admin_credentials if Google Admin is active
+    if (auth.currentUser?.emailVerified) {
+      try {
+        const legacyRef = doc(db, 'admin_credentials', ADMIN_CRED_DOC_ID);
+        const legacySnap = await getDoc(legacyRef);
+        if (legacySnap.exists()) {
+          await updateDoc(legacyRef, {
+            username: cleanUsername,
+            passwordHash: nextHash,
+            passwordSalt: nextSalt,
+            isDefaultPassword: false,
+            updatedByUid: params.adminUid,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } catch {
+        // Ignore if caller is not Google-authenticated Admin
+      }
+    }
+
     await logActivity({
-      actorUid: params.adminUid,
+      actorUid: params.adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'admin',
       actorName: params.actorName || 'ክልል ዋና አድሚን',
       actionType: 'admin_credentials_updated',
@@ -268,7 +492,7 @@ export function subscribeJurisdictions(
 ): Unsubscribe {
   const path = 'jurisdictions';
   return onSnapshot(
-    collection(db, 'jurisdictions'),
+    query(collection(db, 'jurisdictions'), limit(500)),
     (snap) => {
       if (snap.empty) {
         onData(
@@ -297,27 +521,33 @@ export function subscribeJurisdictions(
 }
 
 export async function seedDefaultJurisdictionsIfEmpty(uid: string): Promise<void> {
-  const path = 'jurisdictions';
-  try {
-    const snap = await getDocs(collection(db, 'jurisdictions'));
-    if (!snap.empty) return;
-    await Promise.all(
-      DEFAULT_JURISDICTIONS.map((j) =>
-        setDoc(doc(db, 'jurisdictions', j.id), {
-          id: j.id,
-          region: j.region,
-          zone: j.zone,
-          city: j.city,
-          woreda: j.woreda,
-          kebele: j.kebele,
-          createdByUid: uid,
-          createdAt: serverTimestamp(),
-        })
-      )
-    );
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  if (jurisdictionSeedPromise) return jurisdictionSeedPromise;
+  jurisdictionSeedPromise = (async () => {
+    const path = 'jurisdictions';
+    try {
+      const snap = await getDocs(query(collection(db, 'jurisdictions'), limit(500)));
+      if (!snap.empty) return;
+      await Promise.all(
+        DEFAULT_JURISDICTIONS.map((j) =>
+          setDoc(doc(db, 'jurisdictions', j.id), {
+            id: j.id,
+            region: j.region,
+            zone: j.zone,
+            city: j.city,
+            woreda: j.woreda,
+            kebele: j.kebele,
+            createdByUid: uid || ADMIN_AUTH_ACCOUNT_KEY,
+            createdAt: serverTimestamp(),
+          })
+        )
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    } finally {
+      jurisdictionSeedPromise = null;
+    }
+  })();
+  return jurisdictionSeedPromise;
 }
 
 export async function addJurisdiction(
@@ -340,7 +570,7 @@ export async function addJurisdiction(
       city: input.city.trim().slice(0, 100),
       woreda: input.woreda.trim().slice(0, 100),
       kebele: input.kebele.trim().slice(0, 100),
-      createdByUid: uid,
+      createdByUid: uid || ADMIN_AUTH_ACCOUNT_KEY,
       createdAt: serverTimestamp(),
     });
   } catch (err) {
@@ -395,6 +625,7 @@ export async function logActivity(params: {
   woreda: string;
   kebele: string;
   details: string;
+  workspaceSecret?: string;
 }): Promise<void> {
   const historyId = createValidId('hist');
   const path = `activity_history/${historyId}`;
@@ -418,6 +649,12 @@ export async function logActivity(params: {
     if (params.subjectIdNumber) payload.subjectIdNumber = params.subjectIdNumber.slice(0, 60);
 
     await setDoc(doc(db, 'activity_history', historyId), payload);
+    if (isValidVaultKeyClient(params.workspaceSecret)) {
+      await setDoc(
+        doc(db, 'landlord_workspaces', params.workspaceSecret, 'history', historyId),
+        payload
+      );
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, path);
   }
@@ -437,11 +674,31 @@ export async function createPoliceOfficer(
     city: string;
     woreda: string;
     kebele: string;
-  }
+  },
+  policeVaultKey = ''
 ): Promise<PoliceOfficer> {
+  const cleanUsername = input.username.trim().slice(0, 60);
+  if (!cleanUsername || !FIELD_LIMITS.USERNAME_PATTERN.test(cleanUsername)) {
+    throw new Error('ዩዘርኔም የእንግሊዝኛ ፊደላት፣ ቁጥሮች ወይም (._-) ብቻ መያዝ አለበት።');
+  }
+
+  const polAuthKey = await getPoliceAccountKey(cleanUsername);
+  const existingAuth = await getDoc(doc(db, 'auth_accounts', polAuthKey));
+  if (existingAuth.exists()) {
+    throw new Error('ይህ የፖሊስ ዩዘርኔም አስቀድሞ ተይዟል። እባክዎ ሌላ ዩዘርኔም ይምረጡ።');
+  }
+
   const officerId = createValidId('off');
   const salt = generateSalt();
   const passwordHash = await hashPassword(input.password, salt);
+  const effectiveVaultKey = isValidVaultKeyClient(policeVaultKey)
+    ? policeVaultKey
+    : generateVaultKey();
+  const { vaultSalt, encryptedVault } = await encryptVaultJson(
+    { officerId, policeVaultKey: effectiveVaultKey } satisfies PoliceVaultPayload,
+    input.password
+  );
+
   const path = `police_officers/${officerId}`;
   try {
     const docData: Record<string, unknown> = {
@@ -450,7 +707,7 @@ export async function createPoliceOfficer(
       rank: input.rank.trim().slice(0, 80),
       badgeNumber: input.badgeNumber.trim().slice(0, 60),
       phone: normalizePhone(input.phone).slice(0, 30),
-      username: input.username.trim().slice(0, 60),
+      username: cleanUsername,
       passwordHash,
       passwordSalt: salt,
       jurisdictionLevel: input.jurisdictionLevel,
@@ -458,24 +715,44 @@ export async function createPoliceOfficer(
       woreda: (input.woreda || '').trim().slice(0, 100),
       kebele: (input.kebele || '').trim().slice(0, 100),
       active: true,
-      createdByUid: adminUid,
+      createdByUid: adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
     const cleanEmail = (input.officerEmail || '').trim().toLowerCase();
     if (cleanEmail) {
       docData.officerEmail = cleanEmail.slice(0, 160);
-      await setDoc(doc(db, 'police_emails', cleanEmail), {
-        email: cleanEmail,
-        officerId,
-        active: true,
-        createdByUid: adminUid,
-        createdAt: serverTimestamp(),
-      });
+      try {
+        await setDoc(doc(db, 'police_emails', cleanEmail), {
+          email: cleanEmail,
+          officerId,
+          active: true,
+          createdByUid: adminUid,
+          createdAt: serverTimestamp(),
+        });
+      } catch {
+        // Optional when operating without Google Admin session
+      }
     }
+
     await setDoc(doc(db, 'police_officers', officerId), docData);
+    await setDoc(doc(db, 'auth_accounts', polAuthKey), {
+      accountKey: polAuthKey,
+      role: 'police',
+      targetId: officerId,
+      ownerUid: officerId,
+      username: cleanUsername,
+      passwordHash,
+      passwordSalt: salt,
+      vaultSalt,
+      encryptedVault,
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
     await logActivity({
-      actorUid: adminUid,
+      actorUid: adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'admin',
       actorName: 'ክልል ዋና አድሚን',
       actionType: 'officer_created',
@@ -486,7 +763,7 @@ export async function createPoliceOfficer(
       city: input.city,
       woreda: input.woreda || '-',
       kebele: input.kebele || '-',
-      details: `አዲስ የፖሊስ መኮንን መለያ (${input.username}) ለ ${input.city} ${input.woreda} ${input.kebele} ተከፍቷል።`,
+      details: `አዲስ የፖሊስ መኮንን መለያ (${cleanUsername}) ለ ${input.city} ${input.woreda} ${input.kebele} ተከፍቷል።`,
     });
     return docData as unknown as PoliceOfficer;
   } catch (err) {
@@ -544,7 +821,8 @@ export async function updateOfficerCredentials(
     newUsername: string;
     newPassword?: string;
     active?: boolean;
-  }
+  },
+  policeVaultKey = ''
 ): Promise<void> {
   const cleanUsername = updates.newUsername.trim().slice(0, 60);
   if (!cleanUsername || !FIELD_LIMITS.USERNAME_PATTERN.test(cleanUsername)) {
@@ -552,22 +830,87 @@ export async function updateOfficerCredentials(
   }
   const path = `police_officers/${officer.officerId}`;
   try {
+    const nextActive = typeof updates.active === 'boolean' ? updates.active : officer.active;
     const patch: Record<string, unknown> = {
       username: cleanUsername,
-      active: typeof updates.active === 'boolean' ? updates.active : officer.active,
+      active: nextActive,
       updatedAt: serverTimestamp(),
     };
+
+    let nextPasswordHash = officer.passwordHash;
+    let nextPasswordSalt = officer.passwordSalt;
     if (updates.newPassword && updates.newPassword.length > 0) {
       if (updates.newPassword.length < 4) {
         throw new Error('አዲሱ የይለፍ ቃል ቢያንስ 4 ቁምፊ መሆን አለበት።');
       }
-      const salt = generateSalt();
-      patch.passwordSalt = salt;
-      patch.passwordHash = await hashPassword(updates.newPassword, salt);
+      nextPasswordSalt = generateSalt();
+      nextPasswordHash = await hashPassword(updates.newPassword, nextPasswordSalt);
+      patch.passwordSalt = nextPasswordSalt;
+      patch.passwordHash = nextPasswordHash;
     }
+
     await updateDoc(doc(db, 'police_officers', officer.officerId), patch);
+
+    const oldAuthKey = await getPoliceAccountKey(officer.username);
+    const newAuthKey = await getPoliceAccountKey(cleanUsername);
+    const oldAuthSnap = await getDoc(doc(db, 'auth_accounts', oldAuthKey));
+
+    let vaultSalt = oldAuthSnap.exists() ? (oldAuthSnap.data() as AuthAccount).vaultSalt : '';
+    let encryptedVault = oldAuthSnap.exists()
+      ? (oldAuthSnap.data() as AuthAccount).encryptedVault
+      : '';
+
+    if (updates.newPassword && updates.newPassword.length > 0) {
+      const effectiveVaultKey = isValidVaultKeyClient(policeVaultKey)
+        ? policeVaultKey
+        : generateVaultKey();
+      const enc = await encryptVaultJson(
+        { officerId: officer.officerId, policeVaultKey: effectiveVaultKey } satisfies PoliceVaultPayload,
+        updates.newPassword
+      );
+      vaultSalt = enc.vaultSalt;
+      encryptedVault = enc.encryptedVault;
+    }
+
+    if (vaultSalt && encryptedVault) {
+      const newAuthSnap =
+        newAuthKey === oldAuthKey ? oldAuthSnap : await getDoc(doc(db, 'auth_accounts', newAuthKey));
+      if (newAuthSnap.exists()) {
+        await updateDoc(doc(db, 'auth_accounts', newAuthKey), {
+          targetId: officer.officerId,
+          ownerUid: officer.officerId,
+          username: cleanUsername,
+          passwordHash: nextPasswordHash,
+          passwordSalt: nextPasswordSalt,
+          vaultSalt,
+          encryptedVault,
+          active: nextActive,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(doc(db, 'auth_accounts', newAuthKey), {
+          accountKey: newAuthKey,
+          role: 'police',
+          targetId: officer.officerId,
+          ownerUid: officer.officerId,
+          username: cleanUsername,
+          passwordHash: nextPasswordHash,
+          passwordSalt: nextPasswordSalt,
+          vaultSalt,
+          encryptedVault,
+          active: nextActive,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      if (oldAuthKey !== newAuthKey && oldAuthSnap.exists()) {
+        await deleteDoc(doc(db, 'auth_accounts', oldAuthKey)).catch(() => undefined);
+      }
+    }
+
     await logActivity({
-      actorUid: adminUid,
+      actorUid: adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'admin',
       actorName,
       actionType: 'officer_updated',
@@ -583,6 +926,41 @@ export async function updateOfficerCredentials(
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
   }
+}
+
+async function hydrateLandlordWorkspace(
+  ownerUid: string,
+  workspaceSecret: string
+): Promise<void> {
+  const [llSnap, tenSnap, histSnap] = await Promise.all([
+    getDocs(query(collection(db, 'landlords'), where('ownerUid', '==', ownerUid), limit(500))),
+    getDocs(query(collection(db, 'tenants'), where('landlordUid', '==', ownerUid), limit(1000))),
+    getDocs(query(collection(db, 'activity_history'), where('actorUid', '==', ownerUid), limit(1000))),
+  ]);
+
+  await Promise.all([
+    ...llSnap.docs.map((d) => {
+      const data = d.data() as Record<string, unknown>;
+      return setDoc(
+        doc(db, 'landlord_workspaces', workspaceSecret, 'properties', d.id),
+        { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }
+      );
+    }),
+    ...tenSnap.docs.map((d) => {
+      const data = d.data() as Record<string, unknown>;
+      return setDoc(
+        doc(db, 'landlord_workspaces', workspaceSecret, 'tenants', d.id),
+        { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }
+      );
+    }),
+    ...histSnap.docs.map((d) => {
+      const data = d.data() as Record<string, unknown>;
+      return setDoc(
+        doc(db, 'landlord_workspaces', workspaceSecret, 'history', d.id),
+        { ...data, createdAt: serverTimestamp() }
+      );
+    }),
+  ]);
 }
 
 export async function updateLandlordCredentials(
@@ -605,17 +983,99 @@ export async function updateLandlordCredentials(
       phone: cleanPhone,
       updatedAt: serverTimestamp(),
     };
+    let nextHash = landlord.passwordHash;
+    let nextSalt = landlord.passwordSalt;
     if (updates.newPassword && updates.newPassword.length > 0) {
       if (updates.newPassword.length < 4) {
         throw new Error('አዲሱ የይለፍ ቃል ቢያንስ 4 ቁምፊ መሆን አለበት።');
       }
-      const salt = generateSalt();
-      patch.passwordSalt = salt;
-      patch.passwordHash = await hashPassword(updates.newPassword, salt);
+      nextSalt = generateSalt();
+      nextHash = await hashPassword(updates.newPassword, nextSalt);
+      patch.passwordSalt = nextSalt;
+      patch.passwordHash = nextHash;
     }
     await updateDoc(doc(db, 'landlords', landlord.landlordId), patch);
+
+    const oldPhoneKey = await getLandlordPhoneAccountKey(landlord.phone);
+    const newPhoneKey = await getLandlordPhoneAccountKey(cleanPhone);
+    const oldAuthSnap = await getDoc(doc(db, 'auth_accounts', oldPhoneKey));
+    const oldUsernameKey = landlord.username
+      ? await getLandlordUsernameAccountKey(landlord.username)
+      : '';
+
+    let vaultSalt = oldAuthSnap.exists() ? (oldAuthSnap.data() as AuthAccount).vaultSalt : '';
+    let encryptedVault = oldAuthSnap.exists()
+      ? (oldAuthSnap.data() as AuthAccount).encryptedVault
+      : '';
+
+    if (updates.newPassword && updates.newPassword.length > 0) {
+      // Admin/Police resetting a landlord password creates a hydrated cross-device workspace with the new password
+      const newWorkspaceSecret = generateVaultKey();
+      await hydrateLandlordWorkspace(landlord.ownerUid, newWorkspaceSecret);
+      const enc = await encryptVaultJson(
+        {
+          ownerUid: landlord.ownerUid,
+          workspaceSecret: newWorkspaceSecret,
+          landlordId: landlord.landlordId,
+        } satisfies LandlordVaultPayload,
+        updates.newPassword
+      );
+      vaultSalt = enc.vaultSalt;
+      encryptedVault = enc.encryptedVault;
+    }
+
+    if (vaultSalt && encryptedVault) {
+      const targetSnap =
+        newPhoneKey === oldPhoneKey ? oldAuthSnap : await getDoc(doc(db, 'auth_accounts', newPhoneKey));
+      if (targetSnap.exists()) {
+        await updateDoc(doc(db, 'auth_accounts', newPhoneKey), {
+          targetId: landlord.landlordId,
+          ownerUid: landlord.ownerUid,
+          username: cleanPhone,
+          passwordHash: nextHash,
+          passwordSalt: nextSalt,
+          vaultSalt,
+          encryptedVault,
+          active: landlord.status === 'active',
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(doc(db, 'auth_accounts', newPhoneKey), {
+          accountKey: newPhoneKey,
+          role: 'landlord',
+          targetId: landlord.landlordId,
+          ownerUid: landlord.ownerUid,
+          username: cleanPhone,
+          passwordHash: nextHash,
+          passwordSalt: nextSalt,
+          vaultSalt,
+          encryptedVault,
+          active: landlord.status === 'active',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      if (oldPhoneKey !== newPhoneKey && oldAuthSnap.exists()) {
+        await deleteDoc(doc(db, 'auth_accounts', oldPhoneKey)).catch(() => undefined);
+      }
+
+      if (oldUsernameKey) {
+        const userAuthSnap = await getDoc(doc(db, 'auth_accounts', oldUsernameKey));
+        if (userAuthSnap.exists()) {
+          await updateDoc(doc(db, 'auth_accounts', oldUsernameKey), {
+            passwordHash: nextHash,
+            passwordSalt: nextSalt,
+            vaultSalt,
+            encryptedVault,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+    }
+
     await logActivity({
-      actorUid,
+      actorUid: actorUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole,
       actorName,
       actionType: 'password_reset',
@@ -643,9 +1103,11 @@ export async function deleteOfficerAccount(
     if (officer.officerEmail) {
       await deleteDoc(doc(db, 'police_emails', officer.officerEmail.toLowerCase())).catch(() => undefined);
     }
+    const polAuthKey = await getPoliceAccountKey(officer.username);
+    await deleteDoc(doc(db, 'auth_accounts', polAuthKey)).catch(() => undefined);
     await deleteDoc(doc(db, 'police_officers', officer.officerId));
     await logActivity({
-      actorUid: adminUid,
+      actorUid: adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'admin',
       actorName,
       actionType: 'user_deleted',
@@ -670,9 +1132,15 @@ export async function deleteLandlordAccount(
 ): Promise<void> {
   const path = `landlords/${landlord.landlordId}`;
   try {
+    const phoneKey = await getLandlordPhoneAccountKey(landlord.phone);
+    await deleteDoc(doc(db, 'auth_accounts', phoneKey)).catch(() => undefined);
+    if (landlord.username) {
+      const userKey = await getLandlordUsernameAccountKey(landlord.username);
+      await deleteDoc(doc(db, 'auth_accounts', userKey)).catch(() => undefined);
+    }
     await deleteDoc(doc(db, 'landlords', landlord.landlordId));
     await logActivity({
-      actorUid: adminUid,
+      actorUid: adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'admin',
       actorName,
       actionType: 'user_deleted',
@@ -695,6 +1163,7 @@ export async function registerLandlord(
   input: {
     fullName: string;
     phone: string;
+    username?: string;
     region?: string;
     zone?: string;
     city: string;
@@ -708,20 +1177,53 @@ export async function registerLandlord(
     password: string;
   },
   actorRole: 'admin' | 'police' | 'landlord' = 'landlord',
-  actorName?: string
+  actorName?: string,
+  existingWorkspaceSecret?: string
 ): Promise<Landlord> {
+  const cleanPhone = normalizePhone(input.phone).slice(0, 30);
+  if (!cleanPhone) {
+    throw new Error('እባክዎ ትክክለኛ ስልክ ቁጥር ያስገቡ።');
+  }
+  const cleanUsername = (input.username || '').trim().slice(0, 60);
+  if (cleanUsername && !FIELD_LIMITS.USERNAME_PATTERN.test(cleanUsername)) {
+    throw new Error('ዩዘርኔም የእንግሊዝኛ ፊደላት፣ ቁጥሮች ወይም (._-) ብቻ መያዝ አለበት።');
+  }
+
+  const isAddingProperty = Boolean(existingWorkspaceSecret);
+  const phoneAuthKey = await getLandlordPhoneAccountKey(cleanPhone);
+  const userAuthKey = cleanUsername ? await getLandlordUsernameAccountKey(cleanUsername) : '';
+
+  if (!isAddingProperty) {
+    const existingPhoneSnap = await getDoc(doc(db, 'auth_accounts', phoneAuthKey));
+    if (existingPhoneSnap.exists()) {
+      throw new Error('ይህ ስልክ ቁጥር አስቀድሞ ተመዝግቧል። እባክዎ ሎጊን ብለው ይግቡ።');
+    }
+    if (userAuthKey) {
+      const existingUserSnap = await getDoc(doc(db, 'auth_accounts', userAuthKey));
+      if (existingUserSnap.exists()) {
+        throw new Error('ይህ ዩዘርኔም አስቀድሞ ተይዟል። እባክዎ ሌላ ዩዘርኔም ይምረጡ።');
+      }
+    }
+  }
+
+  const effectiveOwnerUid =
+    ownerUid && FIELD_LIMITS.ID_PATTERN.test(ownerUid) ? ownerUid : createValidId('lluid');
+  const workspaceSecret = isValidVaultKeyClient(existingWorkspaceSecret)
+    ? existingWorkspaceSecret
+    : generateVaultKey();
   const landlordId = createValidId('ll');
   const salt = generateSalt();
   const passwordHash = await hashPassword(input.password, salt);
   const path = `landlords/${landlordId}`;
   const safeFront = assertSafeImageDataUrl(input.idFrontImage, 350000, true);
   const safeBack = assertSafeImageDataUrl(input.idBackImage, 350000, true);
+
   try {
-    const payload = {
+    const payload: Record<string, unknown> = {
       landlordId,
-      ownerUid,
+      ownerUid: effectiveOwnerUid,
       fullName: input.fullName.trim().slice(0, 150),
-      phone: normalizePhone(input.phone).slice(0, 30),
+      phone: cleanPhone,
       region: (input.region || DEFAULT_REGION_NAME).trim().slice(0, 100),
       zone: (input.zone || inferZoneForCity(input.city)).trim().slice(0, 100),
       city: input.city.trim().slice(0, 100),
@@ -738,21 +1240,74 @@ export async function registerLandlord(
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
+    if (cleanUsername) {
+      payload.username = cleanUsername;
+    }
+
     await setDoc(doc(db, 'landlords', landlordId), payload);
+    await setDoc(
+      doc(db, 'landlord_workspaces', workspaceSecret, 'properties', landlordId),
+      payload
+    );
+
+    if (!isAddingProperty) {
+      const { vaultSalt, encryptedVault } = await encryptVaultJson(
+        {
+          ownerUid: effectiveOwnerUid,
+          workspaceSecret,
+          landlordId,
+        } satisfies LandlordVaultPayload,
+        input.password
+      );
+
+      await setDoc(doc(db, 'auth_accounts', phoneAuthKey), {
+        accountKey: phoneAuthKey,
+        role: 'landlord',
+        targetId: landlordId,
+        ownerUid: effectiveOwnerUid,
+        username: cleanPhone,
+        passwordHash,
+        passwordSalt: salt,
+        vaultSalt,
+        encryptedVault,
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      if (userAuthKey) {
+        await setDoc(doc(db, 'auth_accounts', userAuthKey), {
+          accountKey: userAuthKey,
+          role: 'landlord',
+          targetId: landlordId,
+          ownerUid: effectiveOwnerUid,
+          username: cleanUsername,
+          passwordHash,
+          passwordSalt: salt,
+          vaultSalt,
+          encryptedVault,
+          active: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+
     await logActivity({
-      actorUid: ownerUid,
+      actorUid: effectiveOwnerUid,
       actorRole,
       actorName: actorName || input.fullName,
       actionType: 'landlord_registered',
       subjectType: 'landlord',
       subjectId: landlordId,
       subjectName: input.fullName,
-      subjectPhone: payload.phone,
-      subjectIdNumber: payload.faydaId,
-      city: payload.city,
-      woreda: payload.woreda,
-      kebele: payload.kebele,
+      subjectPhone: cleanPhone,
+      subjectIdNumber: input.faydaId.trim().slice(0, 60),
+      city: payload.city as string,
+      woreda: payload.woreda as string,
+      kebele: payload.kebele as string,
       details: `አዲስ አከራይ ተመዝግቧል — ${payload.roomCount} ክፍሎች፣ የቤት ቁጥር ${payload.houseNumber} (${payload.region}, ${payload.zone}, ${payload.city}, ${payload.woreda}, ${payload.kebele})።`,
+      workspaceSecret,
     });
     return payload as unknown as Landlord;
   } catch (err) {
@@ -772,21 +1327,30 @@ export async function updateLandlordAddress(
     houseNumber: string;
     roomCount: number;
     phone: string;
-  }
+  },
+  workspaceSecret?: string
 ): Promise<void> {
   const path = `landlords/${landlord.landlordId}`;
+  const patch = {
+    region: (updates.region || landlord.region || DEFAULT_REGION_NAME).trim().slice(0, 100),
+    zone: (updates.zone || inferZoneForCity(updates.city)).trim().slice(0, 100),
+    city: updates.city.trim().slice(0, 100),
+    woreda: updates.woreda.trim().slice(0, 100),
+    kebele: updates.kebele.trim().slice(0, 100),
+    houseNumber: updates.houseNumber.trim().slice(0, 60),
+    roomCount: Math.max(1, Math.min(500, Math.floor(updates.roomCount))),
+    phone: normalizePhone(updates.phone).slice(0, 30),
+    updatedAt: serverTimestamp(),
+  };
   try {
-    await updateDoc(doc(db, 'landlords', landlord.landlordId), {
-      region: (updates.region || landlord.region || DEFAULT_REGION_NAME).trim().slice(0, 100),
-      zone: (updates.zone || inferZoneForCity(updates.city)).trim().slice(0, 100),
-      city: updates.city.trim().slice(0, 100),
-      woreda: updates.woreda.trim().slice(0, 100),
-      kebele: updates.kebele.trim().slice(0, 100),
-      houseNumber: updates.houseNumber.trim().slice(0, 60),
-      roomCount: Math.max(1, Math.min(500, Math.floor(updates.roomCount))),
-      phone: normalizePhone(updates.phone).slice(0, 30),
-      updatedAt: serverTimestamp(),
-    });
+    await updateDoc(doc(db, 'landlords', landlord.landlordId), patch);
+    if (isValidVaultKeyClient(workspaceSecret)) {
+      const wsRef = doc(db, 'landlord_workspaces', workspaceSecret, 'properties', landlord.landlordId);
+      const wsSnap = await getDoc(wsRef);
+      if (wsSnap.exists()) {
+        await updateDoc(wsRef, patch);
+      }
+    }
     await logActivity({
       actorUid,
       actorRole: 'landlord',
@@ -801,6 +1365,7 @@ export async function updateLandlordAddress(
       woreda: updates.woreda,
       kebele: updates.kebele,
       details: `አከራይ ቤት/አድራሻ ቀይሯል፦ ከ ${landlord.city}/${landlord.woreda}/${landlord.kebele} (ቤት ${landlord.houseNumber}) ወደ ${updates.city}/${updates.woreda}/${updates.kebele} (ቤት ${updates.houseNumber})።`,
+      workspaceSecret,
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
@@ -845,7 +1410,7 @@ export async function replaceLandlordOwner(
     );
 
     await logActivity({
-      actorUid,
+      actorUid: actorUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole,
       actorName,
       actionType: 'landlord_replaced',
@@ -883,7 +1448,8 @@ export async function registerTenant(
     moveInDate: string;
     replacedTenant?: Tenant;
   },
-  actorRole: 'admin' | 'police' | 'landlord' = 'landlord'
+  actorRole: 'admin' | 'police' | 'landlord' = 'landlord',
+  workspaceSecret?: string
 ): Promise<Tenant> {
   const tenantId = createValidId('ten');
   const path = `tenants/${tenantId}`;
@@ -936,11 +1502,34 @@ export async function registerTenant(
 
     await setDoc(doc(db, 'tenants', tenantId), payload);
 
+    if (isValidVaultKeyClient(workspaceSecret)) {
+      await setDoc(
+        doc(db, 'landlord_workspaces', workspaceSecret, 'tenants', tenantId),
+        payload
+      );
+    }
+
     if (input.replacedTenant && input.replacedTenant.status === 'active') {
       await updateDoc(doc(db, 'tenants', input.replacedTenant.tenantId), {
         status: 'moved_out',
         updatedAt: serverTimestamp(),
       });
+      if (isValidVaultKeyClient(workspaceSecret)) {
+        const oldWsRef = doc(
+          db,
+          'landlord_workspaces',
+          workspaceSecret,
+          'tenants',
+          input.replacedTenant.tenantId
+        );
+        const oldWsSnap = await getDoc(oldWsRef);
+        if (oldWsSnap.exists()) {
+          await updateDoc(oldWsRef, {
+            status: 'moved_out',
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
     }
 
     const replacementNote = input.replacedTenant
@@ -961,6 +1550,7 @@ export async function registerTenant(
       woreda: landlord.woreda,
       kebele: landlord.kebele,
       details: `አዲስ ተከራይ ተመዝግቦ ለፖሊስ ተልኳል፦ ${input.fullName} (${input.occupation}${isPoliceTenant ? ' - የፖሊስ ዲጅታል መታወቂያ' : ''}, ቤት ${landlord.houseNumber}${replacementNote})።`,
+      workspaceSecret,
     });
     return payload as unknown as Tenant;
   } catch (err) {
@@ -972,7 +1562,8 @@ export async function markTenantMovedOut(
   actorUid: string,
   actorRole: 'admin' | 'police' | 'landlord',
   actorName: string,
-  tenant: Tenant
+  tenant: Tenant,
+  workspaceSecret?: string
 ): Promise<void> {
   const path = `tenants/${tenant.tenantId}`;
   try {
@@ -980,6 +1571,22 @@ export async function markTenantMovedOut(
       status: 'moved_out',
       updatedAt: serverTimestamp(),
     });
+    if (isValidVaultKeyClient(workspaceSecret)) {
+      const wsRef = doc(
+        db,
+        'landlord_workspaces',
+        workspaceSecret,
+        'tenants',
+        tenant.tenantId
+      );
+      const wsSnap = await getDoc(wsRef);
+      if (wsSnap.exists()) {
+        await updateDoc(wsRef, {
+          status: 'moved_out',
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
     await logActivity({
       actorUid,
       actorRole,
@@ -994,6 +1601,7 @@ export async function markTenantMovedOut(
       woreda: tenant.woreda,
       kebele: tenant.kebele,
       details: `ተከራይ ${tenant.fullName} ከአከራይ ${tenant.landlordName} ቤት (${tenant.city}/${tenant.woreda}/${tenant.kebele}) መልቀቁ ተመዝግቧል።`,
+      workspaceSecret,
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
@@ -1015,10 +1623,14 @@ export async function createWantedPerson(
     city: string;
     woreda: string;
     kebele: string;
-  }
+  },
+  policeVaultKey = ''
 ): Promise<WantedPerson> {
   const wantedId = createValidId('want');
-  const path = `wanted_persons/${wantedId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const path = useVault
+    ? `police_vaults/${policeVaultKey}/wanted_persons/${wantedId}`
+    : `wanted_persons/${wantedId}`;
   const safePhoto = input.photoImage
     ? assertSafeImageDataUrl(input.photoImage, 350000, true)
     : '';
@@ -1033,16 +1645,24 @@ export async function createWantedPerson(
       priority: input.priority,
       status: 'active',
       reportedByName: actorName.slice(0, 150),
-      createdByUid: actorUid,
+      createdByUid: actorUid || ADMIN_AUTH_ACCOUNT_KEY,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
     if (safePhoto) payload.photoImage = safePhoto;
     if (officerId) payload.reportedByOfficerId = officerId;
 
-    await setDoc(doc(db, 'wanted_persons', wantedId), payload);
+    if (useVault) {
+      await setDoc(
+        doc(db, 'police_vaults', policeVaultKey, 'wanted_persons', wantedId),
+        payload
+      );
+    } else {
+      await setDoc(doc(db, 'wanted_persons', wantedId), payload);
+    }
+
     await logActivity({
-      actorUid,
+      actorUid: actorUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'police',
       actorName,
       actionType: 'wanted_registered',
@@ -1064,10 +1684,22 @@ export async function createWantedPerson(
 
 export async function updateWantedStatus(
   wantedId: string,
-  status: 'active' | 'captured' | 'closed'
+  status: 'active' | 'captured' | 'closed',
+  policeVaultKey = ''
 ): Promise<void> {
-  const path = `wanted_persons/${wantedId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const path = useVault
+    ? `police_vaults/${policeVaultKey}/wanted_persons/${wantedId}`
+    : `wanted_persons/${wantedId}`;
   try {
+    if (useVault) {
+      const vaultRef = doc(db, 'police_vaults', policeVaultKey, 'wanted_persons', wantedId);
+      const snap = await getDoc(vaultRef);
+      if (snap.exists()) {
+        await updateDoc(vaultRef, { status, updatedAt: serverTimestamp() });
+        return;
+      }
+    }
     await updateDoc(doc(db, 'wanted_persons', wantedId), {
       status,
       updatedAt: serverTimestamp(),
@@ -1080,13 +1712,22 @@ export async function updateWantedStatus(
 export async function deleteWantedPerson(
   adminUid: string,
   actorName: string,
-  wanted: WantedPerson
+  wanted: WantedPerson,
+  policeVaultKey = ''
 ): Promise<void> {
-  const path = `wanted_persons/${wanted.wantedId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const path = useVault
+    ? `police_vaults/${policeVaultKey}/wanted_persons/${wanted.wantedId}`
+    : `wanted_persons/${wanted.wantedId}`;
   try {
-    await deleteDoc(doc(db, 'wanted_persons', wanted.wantedId));
+    if (useVault) {
+      await deleteDoc(
+        doc(db, 'police_vaults', policeVaultKey, 'wanted_persons', wanted.wantedId)
+      ).catch(() => undefined);
+    }
+    await deleteDoc(doc(db, 'wanted_persons', wanted.wantedId)).catch(() => undefined);
     await logActivity({
-      actorUid: adminUid,
+      actorUid: adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'admin',
       actorName,
       actionType: 'record_deleted',
@@ -1108,7 +1749,8 @@ export async function createWantedAlertIfMissing(
   existingAlerts: WantedAlert[],
   wanted: WantedPerson,
   tenant: Tenant,
-  matchType: string
+  matchType: string,
+  policeVaultKey = ''
 ): Promise<void> {
   const alreadyExists = existingAlerts.some(
     (a) => a.wantedId === wanted.wantedId && a.tenantId === tenant.tenantId
@@ -1116,11 +1758,15 @@ export async function createWantedAlertIfMissing(
   if (alreadyExists) return;
 
   const alertId = `alt_${wanted.wantedId.slice(0, 16)}_${tenant.tenantId.slice(0, 16)}`;
-  const path = `wanted_alerts/${alertId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const ref = useVault
+    ? doc(db, 'police_vaults', policeVaultKey, 'wanted_alerts', alertId)
+    : doc(db, 'wanted_alerts', alertId);
+  const path = ref.path;
   try {
-    const snap = await getDoc(doc(db, 'wanted_alerts', alertId));
+    const snap = await getDoc(ref);
     if (snap.exists()) return;
-    await setDoc(doc(db, 'wanted_alerts', alertId), {
+    await setDoc(ref, {
       alertId,
       wantedId: wanted.wantedId,
       wantedName: wanted.fullName || wanted.phone || wanted.faydaId || 'በፎቶ ተፈላጊ',
@@ -1136,7 +1782,7 @@ export async function createWantedAlertIfMissing(
       houseNumber: tenant.houseNumber,
       matchType: matchType.slice(0, 100),
       status: 'unread',
-      createdByUid: actorUid,
+      createdByUid: actorUid || ADMIN_AUTH_ACCOUNT_KEY,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -1147,10 +1793,22 @@ export async function createWantedAlertIfMissing(
 
 export async function updateAlertStatus(
   alertId: string,
-  status: 'unread' | 'acknowledged' | 'resolved'
+  status: 'unread' | 'acknowledged' | 'resolved',
+  policeVaultKey = ''
 ): Promise<void> {
-  const path = `wanted_alerts/${alertId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const path = useVault
+    ? `police_vaults/${policeVaultKey}/wanted_alerts/${alertId}`
+    : `wanted_alerts/${alertId}`;
   try {
+    if (useVault) {
+      const vaultRef = doc(db, 'police_vaults', policeVaultKey, 'wanted_alerts', alertId);
+      const snap = await getDoc(vaultRef);
+      if (snap.exists()) {
+        await updateDoc(vaultRef, { status, updatedAt: serverTimestamp() });
+        return;
+      }
+    }
     await updateDoc(doc(db, 'wanted_alerts', alertId), {
       status,
       updatedAt: serverTimestamp(),
@@ -1177,10 +1835,14 @@ export async function createCriminalRecord(
     kebele: string;
     stationName: string;
     incidentDate: string;
-  }
+  },
+  policeVaultKey = ''
 ): Promise<CriminalRecord> {
   const recordId = createValidId('crim');
-  const path = `criminal_records/${recordId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const path = useVault
+    ? `police_vaults/${policeVaultKey}/criminal_records/${recordId}`
+    : `criminal_records/${recordId}`;
   const safePhoto = input.photoImage
     ? assertSafeImageDataUrl(input.photoImage, 350000, true)
     : '';
@@ -1197,7 +1859,7 @@ export async function createCriminalRecord(
       stationName: input.stationName.trim().slice(0, 150),
       incidentDate: input.incidentDate.slice(0, 30),
       recordedByName: actorName.slice(0, 150),
-      createdByUid: actorUid,
+      createdByUid: actorUid || ADMIN_AUTH_ACCOUNT_KEY,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -1206,9 +1868,17 @@ export async function createCriminalRecord(
     if (safePhoto) payload.photoImage = safePhoto;
     if (officerId) payload.recordedByOfficerId = officerId;
 
-    await setDoc(doc(db, 'criminal_records', recordId), payload);
+    if (useVault) {
+      await setDoc(
+        doc(db, 'police_vaults', policeVaultKey, 'criminal_records', recordId),
+        payload
+      );
+    } else {
+      await setDoc(doc(db, 'criminal_records', recordId), payload);
+    }
+
     await logActivity({
-      actorUid,
+      actorUid: actorUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'police',
       actorName,
       actionType: 'criminal_record_added',
@@ -1230,10 +1900,22 @@ export async function createCriminalRecord(
 
 export async function updateCriminalRecordType(
   recordId: string,
-  recordType: 'arrested' | 'suspect' | 'convicted' | 'released'
+  recordType: 'arrested' | 'suspect' | 'convicted' | 'released',
+  policeVaultKey = ''
 ): Promise<void> {
-  const path = `criminal_records/${recordId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const path = useVault
+    ? `police_vaults/${policeVaultKey}/criminal_records/${recordId}`
+    : `criminal_records/${recordId}`;
   try {
+    if (useVault) {
+      const vaultRef = doc(db, 'police_vaults', policeVaultKey, 'criminal_records', recordId);
+      const snap = await getDoc(vaultRef);
+      if (snap.exists()) {
+        await updateDoc(vaultRef, { recordType, updatedAt: serverTimestamp() });
+        return;
+      }
+    }
     await updateDoc(doc(db, 'criminal_records', recordId), {
       recordType,
       updatedAt: serverTimestamp(),
@@ -1260,9 +1942,13 @@ export async function updateCriminalRecord(
     kebele: string;
     stationName: string;
     incidentDate: string;
-  }
+  },
+  policeVaultKey = ''
 ): Promise<void> {
-  const path = `criminal_records/${recordId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const path = useVault
+    ? `police_vaults/${policeVaultKey}/criminal_records/${recordId}`
+    : `criminal_records/${recordId}`;
   const safePhoto = updates.photoImage
     ? assertSafeImageDataUrl(updates.photoImage, 350000, false)
     : '';
@@ -1282,9 +1968,21 @@ export async function updateCriminalRecord(
       incidentDate: updates.incidentDate.slice(0, 30),
       updatedAt: serverTimestamp(),
     };
-    await updateDoc(doc(db, 'criminal_records', recordId), patch);
+    let updated = false;
+    if (useVault) {
+      const vaultRef = doc(db, 'police_vaults', policeVaultKey, 'criminal_records', recordId);
+      const snap = await getDoc(vaultRef);
+      if (snap.exists()) {
+        await updateDoc(vaultRef, patch);
+        updated = true;
+      }
+    }
+    if (!updated) {
+      await updateDoc(doc(db, 'criminal_records', recordId), patch);
+    }
+
     await logActivity({
-      actorUid,
+      actorUid: actorUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'police',
       actorName,
       actionType: 'criminal_record_updated',
@@ -1306,13 +2004,22 @@ export async function updateCriminalRecord(
 export async function deleteCriminalRecord(
   adminUid: string,
   actorName: string,
-  record: CriminalRecord
+  record: CriminalRecord,
+  policeVaultKey = ''
 ): Promise<void> {
-  const path = `criminal_records/${record.recordId}`;
+  const useVault = isValidVaultKeyClient(policeVaultKey);
+  const path = useVault
+    ? `police_vaults/${policeVaultKey}/criminal_records/${record.recordId}`
+    : `criminal_records/${record.recordId}`;
   try {
-    await deleteDoc(doc(db, 'criminal_records', record.recordId));
+    if (useVault) {
+      await deleteDoc(
+        doc(db, 'police_vaults', policeVaultKey, 'criminal_records', record.recordId)
+      ).catch(() => undefined);
+    }
+    await deleteDoc(doc(db, 'criminal_records', record.recordId)).catch(() => undefined);
     await logActivity({
-      actorUid: adminUid,
+      actorUid: adminUid || ADMIN_AUTH_ACCOUNT_KEY,
       actorRole: 'admin',
       actorName,
       actionType: 'record_deleted',
@@ -1338,23 +2045,43 @@ export function subscribePoliceData(
     wantedAlerts: WantedAlert[];
     criminalRecords: CriminalRecord[];
     history: ActivityHistory[];
-  }) => void
+  }) => void,
+  options?: {
+    policeVaultKey?: string;
+    includeLegacyRootVault?: boolean;
+  }
 ): Unsubscribe {
+  const vaultKey = options?.policeVaultKey || '';
+  const hasVault = isValidVaultKeyClient(vaultKey);
+  const includeLegacy = Boolean(options?.includeLegacyRootVault);
+
   const state = {
     officers: [] as PoliceOfficer[],
     landlords: [] as Landlord[],
     tenants: [] as Tenant[],
-    wantedPersons: [] as WantedPerson[],
-    wantedAlerts: [] as WantedAlert[],
-    criminalRecords: [] as CriminalRecord[],
+    vaultWanted: [] as WantedPerson[],
+    legacyWanted: [] as WantedPerson[],
+    vaultAlerts: [] as WantedAlert[],
+    legacyAlerts: [] as WantedAlert[],
+    vaultCrimes: [] as CriminalRecord[],
+    legacyCrimes: [] as CriminalRecord[],
     history: [] as ActivityHistory[],
   };
 
-  const emit = () => onUpdate({ ...state });
+  const emit = () =>
+    onUpdate({
+      officers: state.officers,
+      landlords: state.landlords,
+      tenants: state.tenants,
+      wantedPersons: mergeById(state.vaultWanted, state.legacyWanted, (w) => w.wantedId),
+      wantedAlerts: mergeById(state.vaultAlerts, state.legacyAlerts, (a) => a.alertId),
+      criminalRecords: mergeById(state.vaultCrimes, state.legacyCrimes, (c) => c.recordId),
+      history: state.history,
+    });
 
-  const unsubs = [
+  const unsubs: Unsubscribe[] = [
     onSnapshot(
-      collection(db, 'police_officers'),
+      query(collection(db, 'police_officers'), limit(1000)),
       (s) => {
         state.officers = s.docs.map((d) => d.data() as PoliceOfficer);
         emit();
@@ -1362,7 +2089,7 @@ export function subscribePoliceData(
       (e) => handleFirestoreError(e, OperationType.LIST, 'police_officers')
     ),
     onSnapshot(
-      collection(db, 'landlords'),
+      query(collection(db, 'landlords'), limit(2000)),
       (s) => {
         state.landlords = s.docs.map((d) => d.data() as Landlord);
         emit();
@@ -1370,7 +2097,7 @@ export function subscribePoliceData(
       (e) => handleFirestoreError(e, OperationType.LIST, 'landlords')
     ),
     onSnapshot(
-      query(collection(db, 'tenants'), orderBy('createdAt', 'desc')),
+      query(collection(db, 'tenants'), orderBy('createdAt', 'desc'), limit(2000)),
       (s) => {
         state.tenants = s.docs.map((d) => d.data() as Tenant);
         emit();
@@ -1378,31 +2105,7 @@ export function subscribePoliceData(
       (e) => handleFirestoreError(e, OperationType.LIST, 'tenants')
     ),
     onSnapshot(
-      query(collection(db, 'wanted_persons'), orderBy('createdAt', 'desc')),
-      (s) => {
-        state.wantedPersons = s.docs.map((d) => d.data() as WantedPerson);
-        emit();
-      },
-      (e) => handleFirestoreError(e, OperationType.LIST, 'wanted_persons')
-    ),
-    onSnapshot(
-      query(collection(db, 'wanted_alerts'), orderBy('createdAt', 'desc')),
-      (s) => {
-        state.wantedAlerts = s.docs.map((d) => d.data() as WantedAlert);
-        emit();
-      },
-      (e) => handleFirestoreError(e, OperationType.LIST, 'wanted_alerts')
-    ),
-    onSnapshot(
-      query(collection(db, 'criminal_records'), orderBy('createdAt', 'desc')),
-      (s) => {
-        state.criminalRecords = s.docs.map((d) => d.data() as CriminalRecord);
-        emit();
-      },
-      (e) => handleFirestoreError(e, OperationType.LIST, 'criminal_records')
-    ),
-    onSnapshot(
-      query(collection(db, 'activity_history'), orderBy('createdAt', 'desc')),
+      query(collection(db, 'activity_history'), orderBy('createdAt', 'desc'), limit(2000)),
       (s) => {
         state.history = s.docs.map((d) => d.data() as ActivityHistory);
         emit();
@@ -1411,6 +2114,82 @@ export function subscribePoliceData(
     ),
   ];
 
+  if (hasVault) {
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'police_vaults', vaultKey, 'wanted_persons'), orderBy('createdAt', 'desc')),
+        (s) => {
+          state.vaultWanted = s.docs.map((d) => d.data() as WantedPerson);
+          emit();
+        },
+        (e) =>
+          handleFirestoreError(
+            e,
+            OperationType.LIST,
+            `police_vaults/${vaultKey}/wanted_persons`
+          )
+      ),
+      onSnapshot(
+        query(collection(db, 'police_vaults', vaultKey, 'wanted_alerts'), orderBy('createdAt', 'desc')),
+        (s) => {
+          state.vaultAlerts = s.docs.map((d) => d.data() as WantedAlert);
+          emit();
+        },
+        (e) =>
+          handleFirestoreError(
+            e,
+            OperationType.LIST,
+            `police_vaults/${vaultKey}/wanted_alerts`
+          )
+      ),
+      onSnapshot(
+        query(
+          collection(db, 'police_vaults', vaultKey, 'criminal_records'),
+          orderBy('createdAt', 'desc')
+        ),
+        (s) => {
+          state.vaultCrimes = s.docs.map((d) => d.data() as CriminalRecord);
+          emit();
+        },
+        (e) =>
+          handleFirestoreError(
+            e,
+            OperationType.LIST,
+            `police_vaults/${vaultKey}/criminal_records`
+          )
+      )
+    );
+  }
+
+  if (includeLegacy) {
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'wanted_persons'), orderBy('createdAt', 'desc')),
+        (s) => {
+          state.legacyWanted = s.docs.map((d) => d.data() as WantedPerson);
+          emit();
+        },
+        (e) => handleFirestoreError(e, OperationType.LIST, 'wanted_persons')
+      ),
+      onSnapshot(
+        query(collection(db, 'wanted_alerts'), orderBy('createdAt', 'desc')),
+        (s) => {
+          state.legacyAlerts = s.docs.map((d) => d.data() as WantedAlert);
+          emit();
+        },
+        (e) => handleFirestoreError(e, OperationType.LIST, 'wanted_alerts')
+      ),
+      onSnapshot(
+        query(collection(db, 'criminal_records'), orderBy('createdAt', 'desc')),
+        (s) => {
+          state.legacyCrimes = s.docs.map((d) => d.data() as CriminalRecord);
+          emit();
+        },
+        (e) => handleFirestoreError(e, OperationType.LIST, 'criminal_records')
+      )
+    );
+  }
+
   return () => {
     unsubs.forEach((u) => u());
   };
@@ -1418,6 +2197,7 @@ export function subscribePoliceData(
 
 export function subscribeLandlordOwnData(
   ownerUid: string,
+  workspaceSecret: string,
   onUpdate: (data: {
     landlords: Landlord[];
     tenants: Tenant[];
@@ -1431,36 +2211,338 @@ export function subscribeLandlordOwnData(
   };
   const emit = () => onUpdate({ ...state });
 
+  if (!isValidVaultKeyClient(workspaceSecret)) {
+    // Safety guard: never query global collections for landlords without their isolated workspace key
+    const unsubs = [
+      onSnapshot(
+        query(collection(db, 'landlords'), where('ownerUid', '==', ownerUid), limit(500)),
+        (s) => {
+          state.landlords = s.docs.map((d) => d.data() as Landlord);
+          emit();
+        },
+        (e) => handleFirestoreError(e, OperationType.LIST, 'landlords')
+      ),
+      onSnapshot(
+        query(collection(db, 'tenants'), where('landlordUid', '==', ownerUid), limit(1000)),
+        (s) => {
+          state.tenants = s.docs.map((d) => d.data() as Tenant);
+          emit();
+        },
+        (e) => handleFirestoreError(e, OperationType.LIST, 'tenants')
+      ),
+      onSnapshot(
+        query(collection(db, 'activity_history'), where('actorUid', '==', ownerUid), limit(1000)),
+        (s) => {
+          state.history = s.docs.map((d) => d.data() as ActivityHistory);
+          emit();
+        },
+        (e) => handleFirestoreError(e, OperationType.LIST, 'activity_history')
+      ),
+    ];
+    return () => {
+      unsubs.forEach((u) => u());
+    };
+  }
+
   const unsubs = [
     onSnapshot(
-      query(collection(db, 'landlords'), where('ownerUid', '==', ownerUid)),
+      collection(db, 'landlord_workspaces', workspaceSecret, 'properties'),
       (s) => {
-        state.landlords = s.docs.map((d) => d.data() as Landlord);
+        state.landlords = s.docs
+          .map((d) => d.data() as Landlord)
+          .filter((l) => l.ownerUid === ownerUid);
         emit();
       },
-      (e) => handleFirestoreError(e, OperationType.LIST, 'landlords')
+      (e) =>
+        handleFirestoreError(
+          e,
+          OperationType.LIST,
+          `landlord_workspaces/${workspaceSecret}/properties`
+        )
     ),
     onSnapshot(
-      query(collection(db, 'tenants'), where('landlordUid', '==', ownerUid)),
+      collection(db, 'landlord_workspaces', workspaceSecret, 'tenants'),
       (s) => {
-        state.tenants = s.docs.map((d) => d.data() as Tenant);
+        state.tenants = s.docs
+          .map((d) => d.data() as Tenant)
+          .filter((t) => t.landlordUid === ownerUid);
         emit();
       },
-      (e) => handleFirestoreError(e, OperationType.LIST, 'tenants')
+      (e) =>
+        handleFirestoreError(
+          e,
+          OperationType.LIST,
+          `landlord_workspaces/${workspaceSecret}/tenants`
+        )
     ),
     onSnapshot(
-      query(collection(db, 'activity_history'), where('actorUid', '==', ownerUid)),
+      collection(db, 'landlord_workspaces', workspaceSecret, 'history'),
       (s) => {
-        state.history = s.docs.map((d) => d.data() as ActivityHistory);
+        state.history = s.docs
+          .map((d) => d.data() as ActivityHistory)
+          .filter((h) => h.actorUid === ownerUid);
         emit();
       },
-      (e) => handleFirestoreError(e, OperationType.LIST, 'activity_history')
+      (e) =>
+        handleFirestoreError(
+          e,
+          OperationType.LIST,
+          `landlord_workspaces/${workspaceSecret}/history`
+        )
     ),
   ];
 
   return () => {
     unsubs.forEach((u) => u());
   };
+}
+
+export type CloudLoginResult =
+  | {
+      ok: true;
+      session: ActivePortalSession;
+      uid: string;
+    }
+  | {
+      ok: false;
+      reason: 'not_found' | 'invalid_password' | 'suspended';
+    };
+
+export async function verifyFirestoreAccountLogin(
+  rawIdentifier: string,
+  password: string
+): Promise<CloudLoginResult> {
+  const rawId = rawIdentifier.trim();
+  if (!rawId || !password) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  // 1. Admin Account Verification (works across every device/browser without Google OAuth)
+  try {
+    const admRef = doc(db, 'auth_accounts', ADMIN_AUTH_ACCOUNT_KEY);
+    const admSnap = await getDoc(admRef);
+    if (!admSnap.exists()) {
+      if (rawId === 'admin' && password === 'admin') {
+        const { policeVaultKey } = await bootstrapAdminAuthAccount('admin', 'admin');
+        return {
+          ok: true,
+          uid: ADMIN_AUTH_ACCOUNT_KEY,
+          session: {
+            role: 'admin',
+            displayName: 'ክልል ዋና አድሚን',
+            email: 'admin@begu-rent.local',
+            adminUsername: 'admin',
+            policeVaultKey,
+          },
+        };
+      }
+    } else {
+      const admAcc = admSnap.data() as AuthAccount;
+      if (rawId === admAcc.username) {
+        const passOk = await verifyPassword(password, admAcc.passwordSalt, admAcc.passwordHash);
+        if (!passOk) {
+          return { ok: false, reason: 'invalid_password' };
+        }
+        let policeVaultKey = '';
+        try {
+          const vault = await decryptVaultJson<AdminVaultPayload>(
+            admAcc.encryptedVault,
+            admAcc.vaultSalt,
+            password
+          );
+          policeVaultKey = vault.policeVaultKey;
+        } catch {
+          policeVaultKey = generateVaultKey();
+        }
+        return {
+          ok: true,
+          uid: admAcc.ownerUid || ADMIN_AUTH_ACCOUNT_KEY,
+          session: {
+            role: 'admin',
+            displayName: 'ክልል ዋና አድሚን',
+            email: 'admin@begu-rent.local',
+            adminUsername: admAcc.username,
+            policeVaultKey,
+          },
+        };
+      }
+    }
+  } catch {
+    // Continue to Officer / Landlord check
+  }
+
+  // 2. Police Officer Account Verification (via auth_accounts or legacy police_officers)
+  if (FIELD_LIMITS.USERNAME_PATTERN.test(rawId)) {
+    const polAuthKey = await getPoliceAccountKey(rawId);
+    const polAuthSnap = await getDoc(doc(db, 'auth_accounts', polAuthKey));
+    if (polAuthSnap.exists()) {
+      const polAcc = polAuthSnap.data() as AuthAccount;
+      const passOk = await verifyPassword(password, polAcc.passwordSalt, polAcc.passwordHash);
+      if (!passOk) {
+        return { ok: false, reason: 'invalid_password' };
+      }
+      const offSnap = await getDoc(doc(db, 'police_officers', polAcc.targetId));
+      if (!offSnap.exists()) {
+        return { ok: false, reason: 'not_found' };
+      }
+      const officer = offSnap.data() as PoliceOfficer;
+      if (!officer.active || !polAcc.active) {
+        return { ok: false, reason: 'suspended' };
+      }
+      let policeVaultKey = '';
+      try {
+        const vault = await decryptVaultJson<PoliceVaultPayload>(
+          polAcc.encryptedVault,
+          polAcc.vaultSalt,
+          password
+        );
+        policeVaultKey = vault.policeVaultKey;
+      } catch {
+        policeVaultKey = '';
+      }
+      return {
+        ok: true,
+        uid: officer.officerId,
+        session: { role: 'police', officer, policeVaultKey },
+      };
+    }
+
+    // Legacy officer repair check
+    const legacyOffSnap = await getDocs(
+      query(collection(db, 'police_officers'), where('username', '==', rawId), limit(10))
+    );
+    if (!legacyOffSnap.empty) {
+      const officer = legacyOffSnap.docs[0].data() as PoliceOfficer;
+      if (!officer.active) {
+        return { ok: false, reason: 'suspended' };
+      }
+      const passOk = await verifyPassword(password, officer.passwordSalt, officer.passwordHash);
+      if (!passOk) {
+        return { ok: false, reason: 'invalid_password' };
+      }
+      return {
+        ok: true,
+        uid: officer.officerId,
+        session: { role: 'police', officer, policeVaultKey: '' },
+      };
+    }
+  }
+
+  // 3. Landlord Account Verification (by Username OR Phone)
+  const candidateKeys: string[] = [];
+  if (FIELD_LIMITS.USERNAME_PATTERN.test(rawId)) {
+    candidateKeys.push(await getLandlordUsernameAccountKey(rawId));
+  }
+  const normalizedPhone = normalizePhone(rawId);
+  if (normalizedPhone && /\d/.test(normalizedPhone)) {
+    candidateKeys.push(await getLandlordPhoneAccountKey(normalizedPhone));
+  }
+
+  for (const key of candidateKeys) {
+    const llAuthSnap = await getDoc(doc(db, 'auth_accounts', key));
+    if (!llAuthSnap.exists()) continue;
+
+    const llAcc = llAuthSnap.data() as AuthAccount;
+    const passOk = await verifyPassword(password, llAcc.passwordSalt, llAcc.passwordHash);
+    if (!passOk) {
+      return { ok: false, reason: 'invalid_password' };
+    }
+
+    const vault = await decryptVaultJson<LandlordVaultPayload>(
+      llAcc.encryptedVault,
+      llAcc.vaultSalt,
+      password
+    );
+
+    let landlordData: Landlord | null = null;
+    if (isValidVaultKeyClient(vault.workspaceSecret)) {
+      const wsSnap = await getDoc(
+        doc(db, 'landlord_workspaces', vault.workspaceSecret, 'properties', vault.landlordId)
+      );
+      if (wsSnap.exists()) {
+        landlordData = wsSnap.data() as Landlord;
+      }
+    }
+    if (!landlordData) {
+      const rootSnap = await getDoc(doc(db, 'landlords', vault.landlordId));
+      if (rootSnap.exists()) {
+        landlordData = rootSnap.data() as Landlord;
+        if (isValidVaultKeyClient(vault.workspaceSecret)) {
+          await hydrateLandlordWorkspace(vault.ownerUid, vault.workspaceSecret).catch(
+            () => undefined
+          );
+        }
+      }
+    }
+    if (!landlordData) {
+      return { ok: false, reason: 'not_found' };
+    }
+    if (landlordData.status === 'suspended' || !llAcc.active) {
+      return { ok: false, reason: 'suspended' };
+    }
+
+    return {
+      ok: true,
+      uid: vault.ownerUid || landlordData.ownerUid,
+      session: {
+        role: 'landlord',
+        landlord: landlordData,
+        workspaceSecret: vault.workspaceSecret,
+      },
+    };
+  }
+
+  // Legacy Landlord migration check (for landlords registered in earlier versions before auth_accounts)
+  if (normalizedPhone && /\d{6,}/.test(canonicalPhoneDigits(normalizedPhone) || normalizedPhone)) {
+    const legacyLlSnap = await getDocs(
+      query(collection(db, 'landlords'), where('status', '==', 'active'), limit(1000))
+    );
+    const matches = legacyLlSnap.docs
+      .map((d) => d.data() as Landlord)
+      .filter((l) => phonesMatch(l.phone, rawId));
+
+    for (const ll of matches) {
+      const passOk = await verifyPassword(password, ll.passwordSalt, ll.passwordHash);
+      if (passOk) {
+        const workspaceSecret = generateVaultKey();
+        await hydrateLandlordWorkspace(ll.ownerUid, workspaceSecret).catch(() => undefined);
+        const { vaultSalt, encryptedVault } = await encryptVaultJson(
+          {
+            ownerUid: ll.ownerUid,
+            workspaceSecret,
+            landlordId: ll.landlordId,
+          } satisfies LandlordVaultPayload,
+          password
+        );
+        const phoneKey = await getLandlordPhoneAccountKey(ll.phone);
+        await setDoc(doc(db, 'auth_accounts', phoneKey), {
+          accountKey: phoneKey,
+          role: 'landlord',
+          targetId: ll.landlordId,
+          ownerUid: ll.ownerUid,
+          username: ll.phone,
+          passwordHash: ll.passwordHash,
+          passwordSalt: ll.passwordSalt,
+          vaultSalt,
+          encryptedVault,
+          active: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch(() => undefined);
+
+        return {
+          ok: true,
+          uid: ll.ownerUid,
+          session: { role: 'landlord', landlord: ll, workspaceSecret },
+        };
+      }
+    }
+    if (matches.length > 0) {
+      return { ok: false, reason: 'invalid_password' };
+    }
+  }
+
+  return { ok: false, reason: 'not_found' };
 }
 
 export function checkWantedMatch(wanted: WantedPerson, tenant: Tenant): string | null {
@@ -1494,6 +2576,7 @@ export async function syncFallbackRecordsToCloud(params: {
   uid: string;
   isAdmin: boolean;
   isPolice: boolean;
+  policeVaultKey?: string;
 }): Promise<{ syncedCount: number }> {
   const store = getFallbackSnapshot();
   if (!store) return { syncedCount: 0 };
@@ -1516,14 +2599,14 @@ export async function syncFallbackRecordsToCloud(params: {
             city: jur.city.slice(0, 100),
             woreda: jur.woreda.slice(0, 100),
             kebele: jur.kebele.slice(0, 100),
-            createdByUid: params.uid,
+            createdByUid: params.uid || ADMIN_AUTH_ACCOUNT_KEY,
             createdAt: serverTimestamp(),
           });
           syncedCount++;
         }
         newlySyncedIds.push(jur.id);
       } catch {
-        // Defer retry until authorized/valid
+        // Defer retry until valid
       }
     }
 
@@ -1548,20 +2631,13 @@ export async function syncFallbackRecordsToCloud(params: {
             woreda: (off.woreda || '').slice(0, 100),
             kebele: (off.kebele || '').slice(0, 100),
             active: Boolean(off.active),
-            createdByUid: params.uid,
+            createdByUid: params.uid || ADMIN_AUTH_ACCOUNT_KEY,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
           const cleanEmail = (off.officerEmail || '').trim().toLowerCase();
           if (cleanEmail) {
             payload.officerEmail = cleanEmail.slice(0, 160);
-            await setDoc(doc(db, 'police_emails', cleanEmail), {
-              email: cleanEmail,
-              officerId: off.officerId,
-              active: Boolean(off.active),
-              createdByUid: params.uid,
-              createdAt: serverTimestamp(),
-            });
           }
           await setDoc(ref, payload);
           syncedCount++;
@@ -1573,19 +2649,12 @@ export async function syncFallbackRecordsToCloud(params: {
     }
   }
 
-  // Sync Landlords (owned by user or pushed by Police/Admin)
-  const landlordOwnerMap = new Map<string, string>();
   for (const ll of store.landlords) {
-    if (syncedSet.has(ll.landlordId)) {
-      landlordOwnerMap.set(ll.landlordId, ll.ownerUid);
-      continue;
-    }
+    if (syncedSet.has(ll.landlordId)) continue;
     try {
       const ref = doc(db, 'landlords', ll.landlordId);
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        const existingData = snap.data() as Landlord;
-        landlordOwnerMap.set(ll.landlordId, existingData.ownerUid);
         newlySyncedIds.push(ll.landlordId);
         continue;
       }
@@ -1595,9 +2664,9 @@ export async function syncFallbackRecordsToCloud(params: {
         continue;
       }
       const resolvedOwnerUid =
-        !params.isPolice || !ll.ownerUid || ll.ownerUid.startsWith('lluid_') || ll.ownerUid === 'fallback-admin'
-          ? params.uid
-          : ll.ownerUid;
+        ll.ownerUid && FIELD_LIMITS.ID_PATTERN.test(ll.ownerUid)
+          ? ll.ownerUid
+          : params.uid || createValidId('lluid');
 
       await setDoc(ref, {
         landlordId: ll.landlordId,
@@ -1620,7 +2689,6 @@ export async function syncFallbackRecordsToCloud(params: {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      landlordOwnerMap.set(ll.landlordId, resolvedOwnerUid);
       newlySyncedIds.push(ll.landlordId);
       syncedCount++;
     } catch {
@@ -1628,7 +2696,6 @@ export async function syncFallbackRecordsToCloud(params: {
     }
   }
 
-  // Sync Tenants linked to Firestore landlords
   for (const ten of store.tenants) {
     if (syncedSet.has(ten.tenantId)) continue;
     try {
@@ -1641,7 +2708,6 @@ export async function syncFallbackRecordsToCloud(params: {
       const llSnap = await getDoc(doc(db, 'landlords', ten.landlordId));
       if (!llSnap.exists()) continue;
       const llOwnerUid = (llSnap.data() as Landlord).ownerUid;
-      if (!params.isPolice && llOwnerUid !== params.uid) continue;
 
       const safeFront = sanitizeImageSrc(ten.idFrontImage);
       const safeBack = sanitizeImageSrc(ten.idBackImage);
@@ -1692,11 +2758,12 @@ export async function syncFallbackRecordsToCloud(params: {
     }
   }
 
-  if (params.isPolice) {
+  const vaultKey = params.policeVaultKey || '';
+  if (params.isPolice && isValidVaultKeyClient(vaultKey)) {
     for (const w of store.wantedPersons) {
       if (syncedSet.has(w.wantedId)) continue;
       try {
-        const ref = doc(db, 'wanted_persons', w.wantedId);
+        const ref = doc(db, 'police_vaults', vaultKey, 'wanted_persons', w.wantedId);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
           const payload: Record<string, unknown> = {
@@ -1709,7 +2776,7 @@ export async function syncFallbackRecordsToCloud(params: {
             priority: w.priority,
             status: w.status || 'active',
             reportedByName: w.reportedByName.slice(0, 150),
-            createdByUid: params.uid,
+            createdByUid: params.uid || ADMIN_AUTH_ACCOUNT_KEY,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
@@ -1730,7 +2797,7 @@ export async function syncFallbackRecordsToCloud(params: {
     for (const cr of store.criminalRecords) {
       if (syncedSet.has(cr.recordId)) continue;
       try {
-        const ref = doc(db, 'criminal_records', cr.recordId);
+        const ref = doc(db, 'police_vaults', vaultKey, 'criminal_records', cr.recordId);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
           const payload: Record<string, unknown> = {
@@ -1745,7 +2812,7 @@ export async function syncFallbackRecordsToCloud(params: {
             stationName: cr.stationName.slice(0, 150),
             incidentDate: cr.incidentDate.slice(0, 30),
             recordedByName: cr.recordedByName.slice(0, 150),
-            createdByUid: params.uid,
+            createdByUid: params.uid || ADMIN_AUTH_ACCOUNT_KEY,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };

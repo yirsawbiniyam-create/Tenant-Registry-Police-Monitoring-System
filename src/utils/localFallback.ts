@@ -268,6 +268,7 @@ export async function verifyFallbackLogin(
           displayName: 'ክልል ዋና አድሚን',
           email: ROOT_ADMIN_EMAIL,
           adminUsername: store.adminCredential.username,
+          policeVaultKey: '',
         },
       };
     }
@@ -282,7 +283,11 @@ export async function verifyFallbackLogin(
     }
     const ok = await verifyPassword(password, officer.passwordSalt, officer.passwordHash);
     if (ok) {
-      return { ok: true, uid: officer.officerId, session: { role: 'police', officer } };
+      return {
+        ok: true,
+        uid: officer.officerId,
+        session: { role: 'police', officer, policeVaultKey: '' },
+      };
     }
     return { ok: false, reason: 'invalid_password' };
   }
@@ -296,7 +301,11 @@ export async function verifyFallbackLogin(
     for (const ll of candidates) {
       const ok = await verifyPassword(password, ll.passwordSalt, ll.passwordHash);
       if (ok) {
-        return { ok: true, uid: ll.ownerUid, session: { role: 'landlord', landlord: ll } };
+        return {
+          ok: true,
+          uid: ll.ownerUid,
+          session: { role: 'landlord', landlord: ll, workspaceSecret: '' },
+        };
       }
     }
     if (candidates.length > 0) {

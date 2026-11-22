@@ -26,6 +26,8 @@ export interface AppStrings {
   registerSubtitle: string;
   fullNameLabel: string;
   phoneUsernameLabel: string;
+  usernameOptionalLabel: string;
+  usernameOptionalPlaceholder: string;
   regionLabel: string;
   zoneLabel: string;
   cityLabel: string;
@@ -227,7 +229,9 @@ export const DICT: Record<Lang, AppStrings> = {
     registerHeading: 'አዲስ አከራይ መመዝገቢያ ፎርም',
     registerSubtitle: 'አከራይ ስለመሆንዎ መረጃ ይሙሉ፤ ከተመዘገቡ በኋላ ሎጊን ብለው በመግባት ተከራዮችን መመዝገብ ይችላሉ።',
     fullNameLabel: 'ሙሉ ስም ከነአያት *',
-    phoneUsernameLabel: 'ስልክ ቁጥር (ዩዘርኔም ይሆናል) *',
+    phoneUsernameLabel: 'ስልክ ቁጥር *',
+    usernameOptionalLabel: 'ዩዘርኔም (ለመግቢያ - አማራጭ)',
+    usernameOptionalPlaceholder: 'ለምሳሌ abebe12 (በእንግሊዝኛ ፊደል)',
     regionLabel: 'ክልል *',
     zoneLabel: 'ዞን *',
     cityLabel: 'ከተማ *',
@@ -423,7 +427,9 @@ export const DICT: Record<Lang, AppStrings> = {
     registerHeading: 'New Landlord Registration Form',
     registerSubtitle: 'Submit your property owner details and Fayda ID, then log in to register tenants.',
     fullNameLabel: 'Full Name (with Grandfather) *',
-    phoneUsernameLabel: 'Phone Number (Login Username) *',
+    phoneUsernameLabel: 'Phone Number *',
+    usernameOptionalLabel: 'Username (Optional for login)',
+    usernameOptionalPlaceholder: 'e.g. abebe12 (letters/numbers)',
     regionLabel: 'Region *',
     zoneLabel: 'Zone *',
     cityLabel: 'City *',

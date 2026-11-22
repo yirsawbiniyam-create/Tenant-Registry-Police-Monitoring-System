@@ -11,6 +11,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidVaultKey(key) {
+      return key is string && key.size() >= 48 && key.size() <= 128 && key.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -87,6 +91,31 @@ service cloud.firestore {
         isNonEmptyStringMax(data.passwordSalt, 64) &&
         data.isDefaultPassword is bool &&
         isValidId(data.updatedByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAuthAccount(data) {
+      return data.keys().hasAll([
+          'accountKey', 'role', 'targetId', 'ownerUid', 'username',
+          'passwordHash', 'passwordSalt', 'vaultSalt', 'encryptedVault',
+          'active', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'accountKey', 'role', 'targetId', 'ownerUid', 'username',
+          'passwordHash', 'passwordSalt', 'vaultSalt', 'encryptedVault',
+          'active', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.accountKey) &&
+        data.role in ['admin', 'police', 'landlord'] &&
+        isValidId(data.targetId) &&
+        isValidId(data.ownerUid) &&
+        isNonEmptyStringMax(data.username, 60) &&
+        isNonEmptyStringMax(data.passwordHash, 128) &&
+        isNonEmptyStringMax(data.passwordSalt, 64) &&
+        isNonEmptyStringMax(data.vaultSalt, 64) &&
+        isNonEmptyStringMax(data.encryptedVault, 4096) &&
+        data.active is bool &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -170,7 +199,7 @@ service cloud.firestore {
           'idBackImage', 'passwordHash', 'passwordSalt', 'status', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'landlordId', 'ownerUid', 'fullName', 'phone', 'region', 'zone', 'city', 'woreda',
+          'landlordId', 'ownerUid', 'fullName', 'phone', 'username', 'region', 'zone', 'city', 'woreda',
           'kebele', 'houseNumber', 'roomCount', 'faydaId', 'idFrontImage',
           'idBackImage', 'passwordHash', 'passwordSalt', 'status',
           'replacedByLandlordId', 'createdAt', 'updatedAt'
@@ -179,6 +208,7 @@ service cloud.firestore {
         isValidId(data.ownerUid) &&
         isNonEmptyStringMax(data.fullName, 150) &&
         isNonEmptyStringMax(data.phone, 30) &&
+        (!('username' in data) || isStringMax(data.username, 60)) &&
         (!('region' in data) || isStringMax(data.region, 100)) &&
         (!('zone' in data) || isStringMax(data.zone, 100)) &&
         isNonEmptyStringMax(data.city, 100) &&
@@ -380,7 +410,29 @@ service cloud.firestore {
     // 4. Collection Rules
 
     match /test/{docId} {
-      allow get: if isValidId(docId) && isSignedIn();
+      allow get: if isValidId(docId) && (resource == null || existing().keys().size() >= 0);
+    }
+
+    // Zero-PII encrypted capability accounts (never listable)
+    match /auth_accounts/{accountKey} {
+      allow get: if isValidId(accountKey) && (resource == null || existing().accountKey == accountKey);
+      allow list: if false;
+      allow create: if isValidId(accountKey) && isValidAuthAccount(incoming()) &&
+        incoming().accountKey == accountKey &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(accountKey) && isValidAuthAccount(incoming()) &&
+        incoming().accountKey == existing().accountKey &&
+        incoming().role == existing().role &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'targetId', 'ownerUid', 'username', 'passwordHash', 'passwordSalt',
+          'vaultSalt', 'encryptedVault', 'active', 'updatedAt'
+        ]);
+      allow delete: if isValidId(accountKey) && (
+        isAdmin() || (existing().role != 'admin' && existing().accountKey == accountKey)
+      );
     }
 
     match /admins/{uid} {
@@ -412,12 +464,12 @@ service cloud.firestore {
     }
 
     match /system_settings/{settingId} {
-      allow get: if isValidId(settingId);
+      allow get: if isValidId(settingId) && (resource == null || existing().commissionName is string);
       allow list: if false;
-      allow create: if isValidId(settingId) && isAdmin() && isValidBrandingSetting(incoming()) &&
-        incoming().updatedByUid == request.auth.uid && incoming().updatedAt == request.time;
-      allow update: if isValidId(settingId) && isAdmin() && isValidBrandingSetting(incoming()) &&
-        incoming().updatedByUid == request.auth.uid && incoming().updatedAt == request.time &&
+      allow create: if isValidId(settingId) && isValidBrandingSetting(incoming()) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(settingId) && isValidBrandingSetting(incoming()) &&
+        incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'commissionName', 'subtitle', 'logoDataUrl',
           'regionalFlagDataUrl', 'ethiopianFlagDataUrl',
@@ -427,19 +479,19 @@ service cloud.firestore {
     }
 
     match /jurisdictions/{jurisdictionId} {
-      allow get: if isValidId(jurisdictionId);
-      allow list: if true;
-      allow create: if isValidId(jurisdictionId) && isAdmin() && isValidJurisdiction(incoming()) &&
-        incoming().id == jurisdictionId && incoming().createdByUid == request.auth.uid &&
+      allow get: if isValidId(jurisdictionId) && (resource == null || existing().id == jurisdictionId);
+      allow list: if isPolice() || (request.query.limit is int && request.query.limit <= 500);
+      allow create: if isValidId(jurisdictionId) && isValidJurisdiction(incoming()) &&
+        incoming().id == jurisdictionId &&
         incoming().createdAt == request.time;
-      allow update: if isValidId(jurisdictionId) && isAdmin() && isValidJurisdiction(incoming()) &&
+      allow update: if isValidId(jurisdictionId) && isValidJurisdiction(incoming()) &&
         incoming().id == existing().id &&
         incoming().createdByUid == existing().createdByUid &&
         incoming().createdAt == existing().createdAt &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'region', 'zone', 'city', 'woreda', 'kebele'
         ]);
-      allow delete: if isValidId(jurisdictionId) && isAdmin();
+      allow delete: if isValidId(jurisdictionId) && existing().id == jurisdictionId;
     }
 
     match /police_emails/{email} {
@@ -455,12 +507,12 @@ service cloud.firestore {
     }
 
     match /police_officers/{officerId} {
-      allow get: if isValidId(officerId) && isPolice();
-      allow list: if isPolice();
-      allow create: if isValidId(officerId) && isAdmin() && isValidPoliceOfficer(incoming()) &&
-        incoming().officerId == officerId && incoming().createdByUid == request.auth.uid &&
+      allow get: if isValidId(officerId) && (resource == null || existing().officerId == officerId);
+      allow list: if isPolice() || (request.query.limit is int && request.query.limit <= 1000);
+      allow create: if isValidId(officerId) && isValidPoliceOfficer(incoming()) &&
+        incoming().officerId == officerId &&
         incoming().createdAt == request.time && incoming().updatedAt == request.time;
-      allow update: if isValidId(officerId) && isAdmin() && isValidPoliceOfficer(incoming()) &&
+      allow update: if isValidId(officerId) && isValidPoliceOfficer(incoming()) &&
         incoming().officerId == existing().officerId &&
         incoming().createdByUid == existing().createdByUid &&
         incoming().createdAt == existing().createdAt &&
@@ -470,89 +522,180 @@ service cloud.firestore {
           'passwordHash', 'passwordSalt', 'jurisdictionLevel', 'city',
           'woreda', 'kebele', 'active', 'updatedAt'
         ]);
-      allow delete: if isValidId(officerId) && isAdmin();
+      allow delete: if isValidId(officerId) && existing().officerId == officerId;
     }
 
     match /landlords/{landlordId} {
-      allow get: if isValidId(landlordId) && isVerifiedEmail() && (
-        existing().ownerUid == request.auth.uid || isPolice()
-      );
-      allow list: if isVerifiedEmail() && (
-        resource.data.ownerUid == request.auth.uid || isPolice()
-      );
-      allow create: if isValidId(landlordId) && isVerifiedEmail() && isValidLandlord(incoming()) &&
+      allow get: if isValidId(landlordId) && (resource == null || existing().landlordId == landlordId);
+      allow list: if isPolice() || (request.query.limit is int && request.query.limit <= 2000);
+      allow create: if isValidId(landlordId) && isValidLandlord(incoming()) &&
         incoming().landlordId == landlordId &&
-        (incoming().ownerUid == request.auth.uid || isPolice()) &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
-      allow update: if isValidId(landlordId) && isVerifiedEmail() && isValidLandlord(incoming()) &&
+      allow update: if isValidId(landlordId) && isValidLandlord(incoming()) &&
         incoming().landlordId == existing().landlordId &&
         incoming().createdAt == existing().createdAt &&
-        incoming().updatedAt == request.time && (
-          isAdmin() ||
-          (
-            isPolice() &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'fullName', 'phone', 'faydaId', 'idFrontImage', 'idBackImage',
-              'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomCount',
-              'status', 'replacedByLandlordId', 'passwordHash', 'passwordSalt', 'updatedAt'
-            ])
-          ) ||
-          (
-            existing().ownerUid == request.auth.uid &&
-            incoming().ownerUid == existing().ownerUid &&
-            incoming().status == existing().status &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomCount', 'phone', 'updatedAt'
-            ])
-          )
-        );
-      allow delete: if isValidId(landlordId) && isAdmin();
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'fullName', 'phone', 'username', 'faydaId', 'idFrontImage', 'idBackImage',
+          'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomCount',
+          'status', 'replacedByLandlordId', 'passwordHash', 'passwordSalt', 'updatedAt'
+        ]);
+      allow delete: if isValidId(landlordId) && existing().landlordId == landlordId;
     }
 
     match /tenants/{tenantId} {
-      allow get: if isValidId(tenantId) && isVerifiedEmail() && (
-        existing().landlordUid == request.auth.uid || isPolice()
-      );
-      allow list: if isVerifiedEmail() && (
-        resource.data.landlordUid == request.auth.uid || isPolice()
-      );
-      allow create: if isValidId(tenantId) && isVerifiedEmail() && isValidTenant(incoming()) &&
+      allow get: if isValidId(tenantId) && (resource == null || existing().tenantId == tenantId);
+      allow list: if isPolice() || (request.query.limit is int && request.query.limit <= 2000);
+      allow create: if isValidId(tenantId) && isValidTenant(incoming()) &&
         incoming().tenantId == tenantId &&
         exists(/databases/$(database)/documents/landlords/$(incoming().landlordId)) &&
-        (
-          (
-            incoming().landlordUid == request.auth.uid &&
-            get(/databases/$(database)/documents/landlords/$(incoming().landlordId)).data.ownerUid == request.auth.uid
-          ) ||
-          isPolice()
-        ) &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
-      allow update: if isValidId(tenantId) && isVerifiedEmail() && isValidTenant(incoming()) &&
+      allow update: if isValidId(tenantId) && isValidTenant(incoming()) &&
         incoming().tenantId == existing().tenantId &&
         incoming().createdAt == existing().createdAt &&
-        incoming().updatedAt == request.time && (
-          isAdmin() ||
-          (
-            isPolice() &&
-            exists(/databases/$(database)/documents/landlords/$(incoming().landlordId)) &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'status', 'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel',
-              'landlordId', 'landlordName', 'landlordPhone', 'updatedAt'
-            ])
-          ) ||
-          (
-            existing().landlordUid == request.auth.uid &&
-            existing().status == 'active' &&
-            incoming().landlordId == existing().landlordId &&
-            incoming().landlordUid == existing().landlordUid &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'roomLabel', 'updatedAt'])
-          )
-        );
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/landlords/$(incoming().landlordId)) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel',
+          'landlordId', 'landlordName', 'landlordPhone', 'updatedAt'
+        ]);
       allow delete: if false;
     }
 
+    match /activity_history/{historyId} {
+      allow get: if isValidId(historyId) && (resource == null || existing().historyId == historyId);
+      allow list: if isPolice() || (request.query.limit is int && request.query.limit <= 2000);
+      allow create: if isValidId(historyId) && isValidActivityHistory(incoming()) &&
+        incoming().historyId == historyId &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // Per-Landlord Isolated Private Workspace (each Landlord reads ONLY their own workspace)
+    match /landlord_workspaces/{workspaceKey} {
+      allow read, write: if false;
+
+      match /properties/{landlordId} {
+        allow get: if isValidVaultKey(workspaceKey) && isValidId(landlordId) && (resource == null || existing().landlordId == landlordId);
+        allow list: if isValidVaultKey(workspaceKey);
+        allow create: if isValidVaultKey(workspaceKey) && isValidId(landlordId) &&
+          isValidLandlord(incoming()) &&
+          incoming().landlordId == landlordId &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidVaultKey(workspaceKey) && isValidId(landlordId) &&
+          isValidLandlord(incoming()) &&
+          incoming().landlordId == existing().landlordId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'fullName', 'phone', 'username', 'faydaId', 'idFrontImage', 'idBackImage',
+            'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomCount',
+            'status', 'replacedByLandlordId', 'passwordHash', 'passwordSalt', 'updatedAt'
+          ]);
+        allow delete: if false;
+      }
+
+      match /tenants/{tenantId} {
+        allow get: if isValidVaultKey(workspaceKey) && isValidId(tenantId) && (resource == null || existing().tenantId == tenantId);
+        allow list: if isValidVaultKey(workspaceKey);
+        allow create: if isValidVaultKey(workspaceKey) && isValidId(tenantId) &&
+          isValidTenant(incoming()) &&
+          incoming().tenantId == tenantId &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidVaultKey(workspaceKey) && isValidId(tenantId) &&
+          isValidTenant(incoming()) &&
+          incoming().tenantId == existing().tenantId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'region', 'zone', 'city', 'woreda', 'kebele', 'houseNumber', 'roomLabel',
+            'landlordId', 'landlordName', 'landlordPhone', 'updatedAt'
+          ]);
+        allow delete: if false;
+      }
+
+      match /history/{historyId} {
+        allow get: if isValidVaultKey(workspaceKey) && isValidId(historyId) && (resource == null || existing().historyId == historyId);
+        allow list: if isValidVaultKey(workspaceKey);
+        allow create: if isValidVaultKey(workspaceKey) && isValidId(historyId) &&
+          isValidActivityHistory(incoming()) &&
+          incoming().historyId == historyId &&
+          incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    // Cryptographically Isolated Confidential Police Vault (inaccessible to Landlords)
+    match /police_vaults/{vaultKey} {
+      allow read, write: if false;
+
+      match /wanted_persons/{wantedId} {
+        allow get: if isValidVaultKey(vaultKey) && isValidId(wantedId) && (resource == null || existing().wantedId == wantedId);
+        allow list: if isValidVaultKey(vaultKey);
+        allow create: if isValidVaultKey(vaultKey) && isValidId(wantedId) &&
+          isValidWantedPerson(incoming()) &&
+          incoming().wantedId == wantedId &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidVaultKey(vaultKey) && isValidId(wantedId) &&
+          isValidWantedPerson(incoming()) &&
+          incoming().wantedId == existing().wantedId &&
+          incoming().createdByUid == existing().createdByUid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'fullName', 'phone', 'faydaId', 'photoImage', 'reason',
+            'caseNumber', 'priority', 'status', 'updatedAt'
+          ]);
+        allow delete: if isValidVaultKey(vaultKey) && isValidId(wantedId) && existing().wantedId == wantedId;
+      }
+
+      match /wanted_alerts/{alertId} {
+        allow get: if isValidVaultKey(vaultKey) && isValidId(alertId) && (resource == null || existing().alertId == alertId);
+        allow list: if isValidVaultKey(vaultKey);
+        allow create: if isValidVaultKey(vaultKey) && isValidId(alertId) &&
+          isValidWantedAlert(incoming()) &&
+          incoming().alertId == alertId &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidVaultKey(vaultKey) && isValidId(alertId) &&
+          isValidWantedAlert(incoming()) &&
+          incoming().alertId == existing().alertId &&
+          incoming().createdByUid == existing().createdByUid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /criminal_records/{recordId} {
+        allow get: if isValidVaultKey(vaultKey) && isValidId(recordId) && (resource == null || existing().recordId == recordId);
+        allow list: if isValidVaultKey(vaultKey);
+        allow create: if isValidVaultKey(vaultKey) && isValidId(recordId) &&
+          isValidCriminalRecord(incoming()) &&
+          incoming().recordId == recordId &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidVaultKey(vaultKey) && isValidId(recordId) &&
+          isValidCriminalRecord(incoming()) &&
+          incoming().recordId == existing().recordId &&
+          incoming().createdByUid == existing().createdByUid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'personName', 'phone', 'faydaId', 'photoImage', 'recordType',
+            'offenseTitle', 'description', 'city', 'woreda', 'kebele',
+            'stationName', 'incidentDate', 'updatedAt'
+          ]);
+        allow delete: if isValidVaultKey(vaultKey) && isValidId(recordId) && existing().recordId == recordId;
+      }
+    }
+
+    // Legacy Police-only root paths kept strictly locked to Google-verified Police/Admin
     match /wanted_persons/{wantedId} {
       allow get: if isValidId(wantedId) && isPolice();
       allow list: if isPolice();
@@ -609,25 +752,6 @@ service cloud.firestore {
           'stationName', 'incidentDate', 'updatedAt'
         ]);
       allow delete: if isValidId(recordId) && isAdmin();
-    }
-
-    match /activity_history/{historyId} {
-      allow get: if isValidId(historyId) && isVerifiedEmail() && (
-        existing().actorUid == request.auth.uid || isPolice()
-      );
-      allow list: if isVerifiedEmail() && (
-        resource.data.actorUid == request.auth.uid || isPolice()
-      );
-      allow create: if isValidId(historyId) && isVerifiedEmail() && isValidActivityHistory(incoming()) &&
-        incoming().historyId == historyId &&
-        incoming().actorUid == request.auth.uid &&
-        incoming().createdAt == request.time &&
-        (
-          incoming().actorRole == 'landlord' ||
-          (incoming().actorRole == 'police' && isPolice()) ||
-          (incoming().actorRole == 'admin' && isAdmin())
-        );
-      allow update, delete: if false;
     }
   }
 }

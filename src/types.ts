@@ -75,11 +75,27 @@ export interface PoliceOfficer {
   updatedAt: unknown;
 }
 
+export interface AuthAccount {
+  accountKey: string;
+  role: 'admin' | 'police' | 'landlord';
+  targetId: string;
+  ownerUid: string;
+  username: string;
+  passwordHash: string;
+  passwordSalt: string;
+  vaultSalt: string;
+  encryptedVault: string;
+  active: boolean;
+  createdAt: unknown;
+  updatedAt: unknown;
+}
+
 export interface Landlord {
   landlordId: string;
   ownerUid: string;
   fullName: string;
   phone: string;
+  username?: string;
   region?: string;
   zone?: string;
   city: string;
@@ -226,6 +242,20 @@ export interface ActivityHistory {
 }
 
 export type ActivePortalSession =
-  | { role: 'admin'; displayName: string; email: string; adminUsername: string }
-  | { role: 'police'; officer: PoliceOfficer }
-  | { role: 'landlord'; landlord: Landlord };
+  | {
+      role: 'admin';
+      displayName: string;
+      email: string;
+      adminUsername: string;
+      policeVaultKey: string;
+    }
+  | {
+      role: 'police';
+      officer: PoliceOfficer;
+      policeVaultKey: string;
+    }
+  | {
+      role: 'landlord';
+      landlord: Landlord;
+      workspaceSecret: string;
+    };

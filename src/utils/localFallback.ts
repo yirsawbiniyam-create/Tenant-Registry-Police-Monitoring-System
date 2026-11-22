@@ -33,6 +33,7 @@ import {
   DEFAULT_REGIONAL_FLAG_PATH,
   inferZoneForCity,
   resolveEthiopianFlagSrc,
+  resolveLogoSrc,
   resolveRegionalFlagSrc,
 } from './seedData';
 import { ROOT_ADMIN_EMAIL } from '../firebase';
@@ -107,6 +108,7 @@ function normalizeStore(raw: Partial<FallbackStoreState>, fallbackDefault: Fallb
     branding: raw.branding?.commissionName
       ? {
           ...raw.branding,
+          logoDataUrl: resolveLogoSrc(raw.branding.logoDataUrl),
           regionalFlagDataUrl: resolveRegionalFlagSrc(raw.branding.regionalFlagDataUrl),
           ethiopianFlagDataUrl: resolveEthiopianFlagSrc(raw.branding.ethiopianFlagDataUrl),
         }
@@ -388,9 +390,13 @@ export async function saveFallbackBranding(
   }
 ): Promise<void> {
   const store = await ensureFallbackInitialized();
-  const safeLogo = sanitizeImageSrc(payload.logoDataUrl) || DEFAULT_LOGO_PATH;
-  const safeRegional = sanitizeImageSrc(payload.regionalFlagDataUrl) || DEFAULT_REGIONAL_FLAG_PATH;
-  const safeEth = sanitizeImageSrc(payload.ethiopianFlagDataUrl) || DEFAULT_ETHIOPIAN_FLAG_PATH;
+  const safeLogo = sanitizeImageSrc(resolveLogoSrc(payload.logoDataUrl)) || DEFAULT_LOGO_PATH;
+  const safeRegional =
+    sanitizeImageSrc(resolveRegionalFlagSrc(payload.regionalFlagDataUrl)) ||
+    DEFAULT_REGIONAL_FLAG_PATH;
+  const safeEth =
+    sanitizeImageSrc(resolveEthiopianFlagSrc(payload.ethiopianFlagDataUrl)) ||
+    DEFAULT_ETHIOPIAN_FLAG_PATH;
 
   const nextBranding: BrandingSetting = {
     commissionName: payload.commissionName.slice(0, 200),

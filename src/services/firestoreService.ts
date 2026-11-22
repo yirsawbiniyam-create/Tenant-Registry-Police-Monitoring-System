@@ -57,6 +57,7 @@ import {
   DEFAULT_REGIONAL_FLAG_PATH,
   inferZoneForCity,
   resolveEthiopianFlagSrc,
+  resolveLogoSrc,
   resolveRegionalFlagSrc,
 } from '../utils/seedData';
 
@@ -133,6 +134,7 @@ export function subscribeBranding(
         const raw = snap.data() as BrandingSetting;
         onData({
           ...raw,
+          logoDataUrl: resolveLogoSrc(raw.logoDataUrl),
           regionalFlagDataUrl: resolveRegionalFlagSrc(raw.regionalFlagDataUrl),
           ethiopianFlagDataUrl: resolveEthiopianFlagSrc(raw.ethiopianFlagDataUrl),
         });
@@ -165,14 +167,14 @@ export async function saveBranding(
   }
 ): Promise<void> {
   const path = 'system_settings/branding';
-  const safeLogo = assertSafeImageDataUrl(payload.logoDataUrl, 450000, true);
+  const safeLogo = assertSafeImageDataUrl(resolveLogoSrc(payload.logoDataUrl), 450000, true);
   const safeRegionalFlag = assertSafeImageDataUrl(
-    payload.regionalFlagDataUrl || DEFAULT_REGIONAL_FLAG_PATH,
+    resolveRegionalFlagSrc(payload.regionalFlagDataUrl),
     450000,
     false
   );
   const safeEthiopianFlag = assertSafeImageDataUrl(
-    payload.ethiopianFlagDataUrl || DEFAULT_ETHIOPIAN_FLAG_PATH,
+    resolveEthiopianFlagSrc(payload.ethiopianFlagDataUrl),
     450000,
     false
   );

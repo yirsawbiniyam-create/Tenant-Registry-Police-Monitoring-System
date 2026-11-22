@@ -584,8 +584,25 @@ export async function exportToPowerPoint(
   const slide1 = pptx.addSlide();
   slide1.background = { color: '0F172A' };
   const safeLogoUrl = sanitizeImageSrc(report.logoUrl);
-  if (safeLogoUrl.startsWith('data:image/')) {
-    slide1.addImage({ data: safeLogoUrl, x: 4.35, y: 0.5, w: 1.3, h: 1.3 });
+  let pptLogoData = safeLogoUrl.startsWith('data:image/') ? safeLogoUrl : '';
+  if (!pptLogoData && safeLogoUrl.startsWith('/assets/')) {
+    try {
+      const resp = await fetch(safeLogoUrl);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        pptLogoData = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch {
+      pptLogoData = '';
+    }
+  }
+  if (pptLogoData.startsWith('data:image/')) {
+    slide1.addImage({ data: pptLogoData, x: 4.35, y: 0.5, w: 1.3, h: 1.3 });
   }
   slide1.addText(report.commissionName, {
     x: 0.6,

@@ -29,7 +29,11 @@ export interface AppStrings {
   usernameOptionalLabel: string;
   usernameOptionalPlaceholder: string;
   regionLabel: string;
+  adminTypeLabel: string;
+  adminTypeZone: string;
+  adminTypeCity: string;
   zoneLabel: string;
+  cityAdminLabel: string;
   cityLabel: string;
   woredaLabel: string;
   kebeleLabel: string;
@@ -38,6 +42,14 @@ export interface AppStrings {
   selectCity: string;
   selectWoreda: string;
   selectKebele: string;
+  writeCustomOption: string;
+  writeCustomToggle: string;
+  pickFromListToggle: string;
+  typeRegionPlaceholder: string;
+  typeZonePlaceholder: string;
+  typeCityPlaceholder: string;
+  typeWoredaPlaceholder: string;
+  typeKebelePlaceholder: string;
   houseNoLabel: string;
   roomCountLabel: string;
   faydaIdLabel: string;
@@ -233,15 +245,27 @@ export const DICT: Record<Lang, AppStrings> = {
     usernameOptionalLabel: 'ዩዘርኔም (ለመግቢያ - አማራጭ)',
     usernameOptionalPlaceholder: 'ለምሳሌ abebe12 (በእንግሊዝኛ ፊደል)',
     regionLabel: 'ክልል *',
+    adminTypeLabel: 'ከክልል ቀጥሎ መዋቅር ይምረጡ *',
+    adminTypeZone: 'ዞን',
+    adminTypeCity: 'ከተማ አስተዳደር',
     zoneLabel: 'ዞን *',
-    cityLabel: 'ከተማ *',
+    cityAdminLabel: 'ከተማ አስተዳደር *',
+    cityLabel: 'ከተማ / ከተማ አስተዳደር *',
     woredaLabel: 'ወረዳ *',
     kebeleLabel: 'ቀበሌ *',
     selectRegion: 'ክልል ይምረጡ',
     selectZone: 'ዞን ይምረጡ',
-    selectCity: 'ከተማ ይምረጡ',
+    selectCity: 'ከተማ አስተዳደር ይምረጡ',
     selectWoreda: 'ወረዳ ይምረጡ',
     selectKebele: 'ቀበሌ ይምረጡ',
+    writeCustomOption: '✍️ ሌላ / በራሴ እጽፋለሁ',
+    writeCustomToggle: 'በራሴ ልጻፍ',
+    pickFromListToggle: 'ከዝርዝር ምረጥ',
+    typeRegionPlaceholder: 'ክልል ይጻፉ...',
+    typeZonePlaceholder: 'ዞን ይጻፉ...',
+    typeCityPlaceholder: 'ከተማ አስተዳደር ይጻፉ...',
+    typeWoredaPlaceholder: 'ወረዳ በራስዎ ይጻፉ...',
+    typeKebelePlaceholder: 'ቀበሌ በራስዎ ይጻፉ...',
     houseNoLabel: 'የቤት ቁጥር *',
     roomCountLabel: 'የቤት/ክፍል ብዛት *',
     faydaIdLabel: 'የፋይዳ መታወቂያ ቁጥር *',
@@ -431,15 +455,27 @@ export const DICT: Record<Lang, AppStrings> = {
     usernameOptionalLabel: 'Username (Optional for login)',
     usernameOptionalPlaceholder: 'e.g. abebe12 (letters/numbers)',
     regionLabel: 'Region *',
+    adminTypeLabel: 'Select Level After Region *',
+    adminTypeZone: 'Zone',
+    adminTypeCity: 'City Administration',
     zoneLabel: 'Zone *',
-    cityLabel: 'City *',
+    cityAdminLabel: 'City Administration *',
+    cityLabel: 'City / City Administration *',
     woredaLabel: 'Woreda *',
     kebeleLabel: 'Kebele *',
     selectRegion: 'Select Region',
     selectZone: 'Select Zone',
-    selectCity: 'Select City',
+    selectCity: 'Select City Administration',
     selectWoreda: 'Select Woreda',
     selectKebele: 'Select Kebele',
+    writeCustomOption: '✍️ Other / Write my own',
+    writeCustomToggle: 'Type custom',
+    pickFromListToggle: 'Pick from list',
+    typeRegionPlaceholder: 'Write region name...',
+    typeZonePlaceholder: 'Write zone name...',
+    typeCityPlaceholder: 'Write city administration...',
+    typeWoredaPlaceholder: 'Write woreda name...',
+    typeKebelePlaceholder: 'Write kebele name...',
     houseNoLabel: 'House Number *',
     roomCountLabel: 'Houses / Rooms Count *',
     faydaIdLabel: 'Fayda ID Number *',

@@ -418,26 +418,37 @@ export async function renderCroppedAndCompressed(params: {
   }
 
   const mime = keepAlpha ? 'image/webp' : 'image/jpeg';
-  let quality = 0.82;
+  let quality = 0.84;
   let resultUrl = outCanvas.toDataURL(mime, quality);
   while (resultUrl.length > maxChars && quality > 0.28) {
-    quality -= 0.1;
+    quality -= 0.12;
     resultUrl = outCanvas.toDataURL(mime, quality);
   }
 
-  if (resultUrl.length > maxChars) {
+  let scale = 0.72;
+  let attempts = 0;
+  while (resultUrl.length > maxChars && attempts < 3) {
+    attempts += 1;
     const down = document.createElement('canvas');
-    down.width = Math.max(64, Math.round(dw * 0.72));
-    down.height = Math.max(64, Math.round(dh * 0.72));
+    down.width = Math.max(64, Math.round(dw * scale));
+    down.height = Math.max(64, Math.round(dh * scale));
     const dctx = down.getContext('2d');
-    if (dctx) {
-      if (!keepAlpha) {
-        dctx.fillStyle = '#ffffff';
-        dctx.fillRect(0, 0, down.width, down.height);
-      }
-      dctx.drawImage(outCanvas, 0, 0, down.width, down.height);
-      resultUrl = down.toDataURL(mime, 0.65);
+    if (!dctx) break;
+    if (!keepAlpha) {
+      dctx.fillStyle = '#ffffff';
+      dctx.fillRect(0, 0, down.width, down.height);
     }
+    dctx.drawImage(outCanvas, 0, 0, down.width, down.height);
+    // If WebP fallback on Safari yields oversized PNG, use compact JPEG compression on final step
+    const stepMime = keepAlpha && attempts < 2 ? 'image/webp' : 'image/jpeg';
+    if (stepMime === 'image/jpeg' && keepAlpha) {
+      dctx.globalCompositeOperation = 'destination-over';
+      dctx.fillStyle = '#ffffff';
+      dctx.fillRect(0, 0, down.width, down.height);
+      dctx.globalCompositeOperation = 'source-over';
+    }
+    resultUrl = down.toDataURL(stepMime, 0.72);
+    scale *= 0.7;
   }
 
   return resultUrl;

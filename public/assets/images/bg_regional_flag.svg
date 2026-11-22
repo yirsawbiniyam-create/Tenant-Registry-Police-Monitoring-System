@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 220" width="360" height="220">
+  <defs>
+    <!-- Smooth fluttering fabric silhouette -->
+    <clipPath id="bgWaveClip">
+      <path d="M 8 18 C 72 6, 134 26, 198 14 C 258 3, 308 18, 350 10 L 344 198 C 300 206, 250 191, 194 202 C 132 214, 70 194, 8 206 Z" />
+    </clipPath>
+    <!-- 3D fabric fold highlight & shadow gradient -->
+    <linearGradient id="bgClothSheen" x1="0%" y1="0%" x2="100%" y2="12%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.22" />
+      <stop offset="14%" stop-color="#ffffff" stop-opacity="0.16" />
+      <stop offset="30%" stop-color="#000000" stop-opacity="0.18" />
+      <stop offset="48%" stop-color="#ffffff" stop-opacity="0.18" />
+      <stop offset="66%" stop-color="#000000" stop-opacity="0.16" />
+      <stop offset="84%" stop-color="#ffffff" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.20" />
+    </linearGradient>
+    <linearGradient id="bgBrass" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#eab308" />
+      <stop offset="100%" stop-color="#854d0e" />
+    </linearGradient>
+  </defs>
+
+  <!-- Flag cloth clipped to wavy silhouette (100% transparent outside) -->
+  <g clip-path="url(#bgWaveClip)">
+    <!-- Black top stripe -->
+    <rect x="0" y="0" width="360" height="75" fill="#111827" />
+    <!-- Green middle stripe -->
+    <rect x="0" y="75" width="360" height="72" fill="#00843d" />
+    <!-- Yellow bottom stripe -->
+    <rect x="0" y="147" width="360" height="73" fill="#facc15" />
+    <!-- Red hoist triangle -->
+    <polygon points="8,14 174,111 8,210" fill="#dc2626" />
+    <!-- Subtle stitched hoist sleeve -->
+    <rect x="8" y="0" width="9" height="220" fill="#000000" fill-opacity="0.15" />
+    <!-- Realistic silk folds lighting overlay -->
+    <rect x="0" y="0" width="360" height="220" fill="url(#bgClothSheen)" />
+  </g>
+
+  <!-- Brass grommets for mounting onto metallic pole -->
+  <circle cx="14" cy="27" r="3.6" fill="url(#bgBrass)" stroke="#422006" stroke-width="0.8" />
+  <circle cx="14" cy="27" r="1.5" fill="none" stroke="#fef9c3" stroke-width="0.6" />
+  <circle cx="14" cy="197" r="3.6" fill="url(#bgBrass)" stroke="#422006" stroke-width="0.8" />
+  <circle cx="14" cy="197" r="1.5" fill="none" stroke="#fef9c3" stroke-width="0.6" />
+</svg>

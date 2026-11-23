@@ -97,13 +97,16 @@ import {
 } from '../utils/localFallback';
 import {
   DEFAULT_ETHIOPIAN_FLAG_PATH,
+  DEFAULT_LOGO_PATH,
   DEFAULT_REGION_NAME,
   DEFAULT_REGIONAL_FLAG_PATH,
   inferZoneForCity,
   resolveEthiopianFlagSrc,
+  resolveLogoSrc,
   resolveRegionalFlagSrc,
 } from '../utils/seedData';
 import { BrandingImage } from './BrandingImage';
+import { LocationSelector } from './LocationSelector';
 import { SmartPhotoInput } from './SmartPhotoInput';
 import {
   computeRepeatOffendersCount,
@@ -229,6 +232,8 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   const [susPhoto, setSusPhoto] = useState('');
   const [susOffense, setSusOffense] = useState('');
   const [susDesc, setSusDesc] = useState('');
+  const [susRegion, setSusRegion] = useState(DEFAULT_REGION_NAME);
+  const [susZone, setSusZone] = useState(inferZoneForCity(officer?.city || 'አሶሳ ከተማ'));
   const [susCity, setSusCity] = useState(officer?.city || 'አሶሳ ከተማ');
   const [susWoreda, setSusWoreda] = useState(officer?.woreda || 'ወረዳ 1');
   const [susKebele, setSusKebele] = useState(officer?.kebele || 'ቀበሌ 01');
@@ -245,6 +250,8 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   const [crType, setCrType] = useState<RecordType>('arrested');
   const [crOffense, setCrOffense] = useState('');
   const [crDesc, setCrDesc] = useState('');
+  const [crRegion, setCrRegion] = useState(DEFAULT_REGION_NAME);
+  const [crZone, setCrZone] = useState(inferZoneForCity(officer?.city || 'አሶሳ ከተማ'));
   const [crCity, setCrCity] = useState(officer?.city || 'አሶሳ ከተማ');
   const [crWoreda, setCrWoreda] = useState(officer?.woreda || 'ወረዳ 1');
   const [crKebele, setCrKebele] = useState(officer?.kebele || 'ቀበሌ 01');
@@ -284,6 +291,8 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   const [offEmail, setOffEmail] = useState('');
   const [offPass, setOffPass] = useState('');
   const [offLevel, setOffLevel] = useState<JurisdictionLevel>('woreda');
+  const [offRegion, setOffRegion] = useState(DEFAULT_REGION_NAME);
+  const [offZone, setOffZone] = useState(inferZoneForCity('አሶሳ ከተማ'));
   const [offCity, setOffCity] = useState('አሶሳ ከተማ');
   const [offWoreda, setOffWoreda] = useState('ወረዳ 1');
   const [offKebele, setOffKebele] = useState('ቀበሌ 01');
@@ -297,7 +306,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   // Admin: Logo / Flags / Branding Form
   const [brandName, setBrandName] = useState(branding.commissionName);
   const [brandSub, setBrandSub] = useState(branding.subtitle || '');
-  const [brandLogo, setBrandLogo] = useState(branding.logoDataUrl);
+  const [brandLogo, setBrandLogo] = useState(resolveLogoSrc(branding.logoDataUrl));
   const [brandRegionalFlag, setBrandRegionalFlag] = useState(
     resolveRegionalFlagSrc(branding.regionalFlagDataUrl || DEFAULT_REGIONAL_FLAG_PATH)
   );
@@ -308,7 +317,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
   useEffect(() => {
     setBrandName(branding.commissionName);
     setBrandSub(branding.subtitle || '');
-    setBrandLogo(branding.logoDataUrl);
+    setBrandLogo(resolveLogoSrc(branding.logoDataUrl));
     setBrandRegionalFlag(resolveRegionalFlagSrc(branding.regionalFlagDataUrl));
     setBrandEthiopianFlag(resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl));
   }, [branding]);
@@ -409,23 +418,32 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     }
   }, [wantedPersons, tenants, wantedAlerts, firebaseUid, isCloudConnected, policeVaultKey]);
 
-  const matchesOfficerScope = (item: { city: string; woreda: string; kebele: string }) => {
+  const matchesOfficerScope = (item: {
+    zone?: string;
+    city: string;
+    woreda: string;
+    kebele: string;
+  }) => {
     if (isAdmin || !officer || officer.jurisdictionLevel === 'regional') return true;
     const offCity = normalizeText(officer.city);
     const offWoreda = normalizeText(officer.woreda);
     const offKebele = normalizeText(officer.kebele);
+    const itemZone = normalizeText(item.zone || inferZoneForCity(item.city));
     const itemCity = normalizeText(item.city);
     const itemWoreda = normalizeText(item.woreda);
     const itemKebele = normalizeText(item.kebele);
 
     if (officer.jurisdictionLevel === 'city') {
-      return !offCity || itemCity === offCity;
+      return !offCity || itemCity === offCity || itemZone === offCity;
     }
     if (officer.jurisdictionLevel === 'woreda') {
-      return (!offCity || itemCity === offCity) && (!offWoreda || itemWoreda === offWoreda);
+      return (
+        (!offCity || itemCity === offCity || itemZone === offCity) &&
+        (!offWoreda || itemWoreda === offWoreda)
+      );
     }
     return (
-      (!offCity || itemCity === offCity) &&
+      (!offCity || itemCity === offCity || itemZone === offCity) &&
       (!offWoreda || itemWoreda === offWoreda) &&
       (!offKebele || itemKebele === offKebele)
     );
@@ -1000,7 +1018,10 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setCrType('arrested');
     setCrOffense('');
     setCrDesc('');
-    setCrCity(officer?.city || 'አሶሳ ከተማ');
+    const baseCity = officer?.city || 'አሶሳ ከተማ';
+    setCrRegion(DEFAULT_REGION_NAME);
+    setCrZone(inferZoneForCity(baseCity));
+    setCrCity(baseCity);
     setCrWoreda(officer?.woreda || 'ወረዳ 1');
     setCrKebele(officer?.kebele || 'ቀበሌ 01');
     setCrStation(
@@ -1018,6 +1039,8 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
     setCrType(rec.recordType);
     setCrOffense(rec.offenseTitle);
     setCrDesc(rec.description);
+    setCrRegion(DEFAULT_REGION_NAME);
+    setCrZone(inferZoneForCity(rec.city));
     setCrCity(rec.city);
     setCrWoreda(rec.woreda);
     setCrKebele(rec.kebele);
@@ -1356,15 +1379,14 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
       const payload = {
         commissionName: brandName,
         subtitle: brandSub,
-        logoDataUrl: brandLogo,
-        regionalFlagDataUrl: brandRegionalFlag,
-        ethiopianFlagDataUrl: brandEthiopianFlag,
+        logoDataUrl: resolveLogoSrc(brandLogo),
+        regionalFlagDataUrl: resolveRegionalFlagSrc(brandRegionalFlag),
+        ethiopianFlagDataUrl: resolveEthiopianFlagSrc(brandEthiopianFlag),
       };
       if (isCloudConnected) {
         await saveBranding(firebaseUid, payload);
-      } else {
-        await saveFallbackBranding(firebaseUid, payload);
       }
+      await saveFallbackBranding(firebaseUid, payload);
       setStatusMsg('የፖሊስ ኮሚሽን ሎጎ፣ የክልል እና የኢትዮጵያ ሰንደቅአላማ በመላው ሲስተሙ (የመግቢያ ገፅን ጨምሮ) ተቀይሯል።');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'ሎጎ መቀየር አልተቻለም');
@@ -1579,21 +1601,30 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
 
   const unreadAlerts = scopedAlerts.filter((a) => a.status === 'unread');
   const policeTenantsCount = scopedTenants.filter((item) => item.isPoliceTenant).length;
-  const allCities = useMemo(
-    () => Array.from(new Set(jurisdictions.map((j) => j.city))),
-    [jurisdictions]
-  );
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Top 3-Zone Header */}
       <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3 no-print">
         <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <BrandingImage
-              src={branding.logoDataUrl}
+              src={resolveRegionalFlagSrc(branding.regionalFlagDataUrl)}
+              fallbackSrc={DEFAULT_REGIONAL_FLAG_PATH}
+              alt="Regional Flag"
+              className="hidden sm:block w-8 h-5 rounded object-cover border border-slate-200 shrink-0"
+            />
+            <BrandingImage
+              src={resolveLogoSrc(branding.logoDataUrl)}
+              fallbackSrc={DEFAULT_LOGO_PATH}
               alt={branding.commissionName}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-slate-200 shrink-0"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-amber-400/70 bg-white shadow-xs shrink-0"
+            />
+            <BrandingImage
+              src={resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl)}
+              fallbackSrc={DEFAULT_ETHIOPIAN_FLAG_PATH}
+              alt="Ethiopian Flag"
+              className="hidden sm:block w-8 h-5 rounded object-cover border border-slate-200 shrink-0"
             />
             <span className="text-xs sm:text-base font-bold text-slate-900 whitespace-nowrap truncate">
               {branding.commissionName}
@@ -1761,16 +1792,38 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
         {/* Main Workspace Viewport */}
         <main className="flex-1 p-3 sm:p-6 space-y-4 sm:space-y-6 overflow-x-hidden">
           {/* Ornamental System Title Banner */}
-          <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-2xl px-4 py-4 sm:px-6 sm:py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 no-print shadow-sm">
-            <div>
-              <h1 className="text-lg sm:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-emerald-300">
-                {t.systemTitle}
-              </h1>
-              <p className="text-xs sm:text-sm text-cyan-300 font-bold mt-1">
-                {branding.commissionName}
-              </p>
+          <section className="bg-slate-950 border border-amber-400/40 rounded-2xl px-4 py-4 sm:px-6 sm:py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print shadow-md">
+            <div className="flex items-center gap-3 min-w-0">
+              <BrandingImage
+                src={resolveLogoSrc(branding.logoDataUrl)}
+                fallbackSrc={DEFAULT_LOGO_PATH}
+                alt={branding.commissionName}
+                className="w-11 h-11 sm:w-14 sm:h-14 rounded-full object-cover border-2 border-amber-400 bg-white shadow-md shrink-0"
+              />
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-2xl font-black tracking-normal text-white leading-snug">
+                  {t.systemTitle}
+                </h1>
+                <p className="text-xs sm:text-sm text-amber-300 font-bold mt-1 truncate">
+                  {branding.commissionName}
+                </p>
+              </div>
             </div>
-            <p className="text-xs sm:text-sm text-amber-200 font-bold">{t.motto}</p>
+            <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0">
+              <BrandingImage
+                src={resolveRegionalFlagSrc(branding.regionalFlagDataUrl)}
+                fallbackSrc={DEFAULT_REGIONAL_FLAG_PATH}
+                alt="Regional Flag"
+                className="w-9 h-6 rounded object-cover border border-white/25 shadow-sm"
+              />
+              <p className="text-xs sm:text-sm text-amber-200 font-bold">{t.motto}</p>
+              <BrandingImage
+                src={resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl)}
+                fallbackSrc={DEFAULT_ETHIOPIAN_FLAG_PATH}
+                alt="Ethiopian Flag"
+                className="w-9 h-6 rounded object-cover border border-white/25 shadow-sm"
+              />
+            </div>
           </section>
 
           {isAdmin && adminCred?.isDefaultPassword && (
@@ -2871,32 +2924,25 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                 />
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <input
-                    type="text"
-                    required
-                    value={susCity}
-                    onChange={(e) => setSusCity(e.target.value)}
-                    placeholder="ከተማ"
-                    className="px-2.5 py-2 border border-slate-300 rounded-lg text-xs"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={susWoreda}
-                    onChange={(e) => setSusWoreda(e.target.value)}
-                    placeholder="ወረዳ"
-                    className="px-2.5 py-2 border border-slate-300 rounded-lg text-xs"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={susKebele}
-                    onChange={(e) => setSusKebele(e.target.value)}
-                    placeholder="ቀበሌ"
-                    className="px-2.5 py-2 border border-slate-300 rounded-lg text-xs"
-                  />
-                </div>
+                <LocationSelector
+                  value={{
+                    region: susRegion,
+                    zone: susZone,
+                    city: susCity,
+                    woreda: susWoreda,
+                    kebele: susKebele,
+                  }}
+                  onChange={(loc) => {
+                    setSusRegion(loc.region);
+                    setSusZone(loc.zone);
+                    setSusCity(loc.city);
+                    setSusWoreda(loc.woreda);
+                    setSusKebele(loc.kebele);
+                  }}
+                  jurisdictions={jurisdictions}
+                  lang={lang}
+                  theme="light"
+                />
 
                 <input
                   type="text"
@@ -3198,32 +3244,25 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <input
-                      type="text"
-                      required
-                      value={crCity}
-                      onChange={(e) => setCrCity(e.target.value)}
-                      placeholder="ከተማ"
-                      className="px-2.5 py-2 border border-slate-300 rounded-lg text-xs"
-                    />
-                    <input
-                      type="text"
-                      required
-                      value={crWoreda}
-                      onChange={(e) => setCrWoreda(e.target.value)}
-                      placeholder="ወረዳ"
-                      className="px-2.5 py-2 border border-slate-300 rounded-lg text-xs"
-                    />
-                    <input
-                      type="text"
-                      required
-                      value={crKebele}
-                      onChange={(e) => setCrKebele(e.target.value)}
-                      placeholder="ቀበሌ"
-                      className="px-2.5 py-2 border border-slate-300 rounded-lg text-xs"
-                    />
-                  </div>
+                  <LocationSelector
+                    value={{
+                      region: crRegion,
+                      zone: crZone,
+                      city: crCity,
+                      woreda: crWoreda,
+                      kebele: crKebele,
+                    }}
+                    onChange={(loc) => {
+                      setCrRegion(loc.region);
+                      setCrZone(loc.zone);
+                      setCrCity(loc.city);
+                      setCrWoreda(loc.woreda);
+                      setCrKebele(loc.kebele);
+                    }}
+                    jurisdictions={jurisdictions}
+                    lang={lang}
+                    theme="light"
+                  />
 
                   <div className="space-y-3">
                     <input
@@ -3971,44 +4010,45 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                    <select
-                      value={offLevel}
-                      onChange={(e) => setOffLevel(e.target.value as JurisdictionLevel)}
-                      className="px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white"
-                    >
-                      <option value="regional">ክልል ፖሊስ</option>
-                      <option value="city">ከተማ ፖሊስ</option>
-                      <option value="woreda">ወረዳ ፖሊስ</option>
-                      <option value="kebele">ቀበሌ ፖሊስ</option>
-                    </select>
-                    <select
-                      value={offCity}
-                      onChange={(e) => setOffCity(e.target.value)}
-                      className="px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white"
-                    >
-                      {allCities.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={offWoreda}
-                      disabled={offLevel === 'city' || offLevel === 'regional'}
-                      onChange={(e) => setOffWoreda(e.target.value)}
-                      placeholder="ወረዳ"
-                      className="px-3 py-2 border border-slate-300 rounded-lg text-xs disabled:bg-slate-100"
-                    />
-                    <input
-                      type="text"
-                      value={offKebele}
-                      disabled={offLevel !== 'kebele'}
-                      onChange={(e) => setOffKebele(e.target.value)}
-                      placeholder="ቀበሌ"
-                      className="px-3 py-2 border border-slate-300 rounded-lg text-xs disabled:bg-slate-100"
-                    />
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        የሃላፊነት ደረጃ
+                      </label>
+                      <select
+                        value={offLevel}
+                        onChange={(e) => setOffLevel(e.target.value as JurisdictionLevel)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white font-semibold"
+                      >
+                        <option value="regional">ክልል ፖሊስ</option>
+                        <option value="city">ዞን / ከተማ ፖሊስ</option>
+                        <option value="woreda">ወረዳ ፖሊስ</option>
+                        <option value="kebele">ቀበሌ ፖሊስ</option>
+                      </select>
+                    </div>
+                    {offLevel !== 'regional' && (
+                      <LocationSelector
+                        value={{
+                          region: offRegion,
+                          zone: offZone,
+                          city: offCity,
+                          woreda: offWoreda,
+                          kebele: offKebele,
+                        }}
+                        onChange={(loc) => {
+                          setOffRegion(loc.region);
+                          setOffZone(loc.zone);
+                          setOffCity(loc.city);
+                          setOffWoreda(loc.woreda);
+                          setOffKebele(loc.kebele);
+                        }}
+                        jurisdictions={jurisdictions}
+                        lang={lang}
+                        theme="light"
+                        hideWoreda={offLevel === 'city'}
+                        hideKebele={offLevel !== 'kebele'}
+                      />
+                    )}
                   </div>
 
                   <button
@@ -4020,7 +4060,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   </button>
                 </form>
 
-                {/* Police Logo, Mountain Peak Flags & Branding */}
+                {/* Police Logo, Flags & Branding */}
                 <form
                   onSubmit={handleSaveBrandingSubmit}
                   className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-6 space-y-4"
@@ -4032,7 +4072,7 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                         የፖሊስ ሎጎ፣ ሰንደቅአላማ እና መጠሪያ መቀየሪያ
                       </h2>
                       <p className="text-xs text-slate-500">
-                        ሎጎውን፣ የቤኒሻንጉል ጉሙዝ ክልል እና የኢትዮጵያ ሰንደቅአላማ ሲቀይሩ በሎጊን ገፅ ላይ ወዲያውኑ ይታያል።
+                        ሎጎውን፣ የቤኒሻንጉል ጉሙዝ ክልል እና የኢትዮጵያ ሰንደቅአላማ ሲቀይሩ በሁሉም የሲስተሙ ገፆችና ሪፖርቶች ላይ ወዲያውኑ ይታያል።
                       </p>
                     </div>
                   </div>
@@ -4040,7 +4080,8 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
                       <BrandingImage
-                        src={brandLogo}
+                        src={resolveLogoSrc(brandLogo)}
+                        fallbackSrc={DEFAULT_LOGO_PATH}
                         alt="Preview Logo"
                         className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border border-slate-200 shrink-0"
                       />
@@ -4055,21 +4096,23 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                           lang={lang}
                           compact
                           hidePreview
-                          maxChars={380000}
+                          maxDimension={640}
+                          maxChars={240000}
                         />
                       </div>
                     </div>
                   </div>
 
-                  {/* Admin Uploadable Flags for Login Page Left & Right Mountain Peaks */}
+                  {/* Admin Uploadable Flags for Login Page Left & Right Poles */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50/70">
                       <p className="text-xs font-bold text-slate-800">
-                        የቤኒሻንጉል ጉሙዝ ክልል ሰንደቅአላማ (ግራ ተራራ)
+                        የቤኒሻንጉል ጉሙዝ ክልል ሰንደቅአላማ (ግራ)
                       </p>
                       <div className="flex items-center gap-3">
                         <BrandingImage
-                          src={brandRegionalFlag}
+                          src={resolveRegionalFlagSrc(brandRegionalFlag)}
+                          fallbackSrc={DEFAULT_REGIONAL_FLAG_PATH}
                           alt="Benishangul-Gumuz Regional Flag"
                           className="w-16 h-11 rounded object-contain border border-slate-300 shrink-0"
                         />
@@ -4084,7 +4127,8 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                             lang={lang}
                             compact
                             hidePreview
-                            maxChars={380000}
+                            maxDimension={640}
+                            maxChars={240000}
                           />
                         </div>
                       </div>
@@ -4092,11 +4136,12 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
 
                     <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50/70">
                       <p className="text-xs font-bold text-slate-800">
-                        የኢትዮጵያ ሰንደቅአላማ (ቀኝ ተራራ)
+                        የኢትዮጵያ ሰንደቅአላማ (ቀኝ)
                       </p>
                       <div className="flex items-center gap-3">
                         <BrandingImage
-                          src={brandEthiopianFlag}
+                          src={resolveEthiopianFlagSrc(brandEthiopianFlag)}
+                          fallbackSrc={DEFAULT_ETHIOPIAN_FLAG_PATH}
                           alt="Ethiopian National Flag"
                           className="w-16 h-11 rounded object-contain border border-slate-300 shrink-0"
                         />
@@ -4111,7 +4156,8 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                             lang={lang}
                             compact
                             hidePreview
-                            maxChars={380000}
+                            maxDimension={640}
+                            maxChars={240000}
                           />
                         </div>
                       </div>
@@ -4134,13 +4180,26 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
 
-                  <button
-                    type="submit"
-                    disabled={busy}
-                    className="w-full py-2.5 min-h-[44px] bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg"
-                  >
-                    ሎጎ፣ ሰንደቅአላማ እና መጠሪያ አዘምን
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="submit"
+                      disabled={busy}
+                      className="flex-1 py-2.5 min-h-[44px] bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg"
+                    >
+                      ሎጎ፣ ሰንደቅአላማ እና መጠሪያ አዘምን
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBrandLogo(DEFAULT_LOGO_PATH);
+                        setBrandRegionalFlag(DEFAULT_REGIONAL_FLAG_PATH);
+                        setBrandEthiopianFlag(DEFAULT_ETHIOPIAN_FLAG_PATH);
+                      }}
+                      className="px-3 py-2.5 min-h-[44px] bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg whitespace-nowrap"
+                    >
+                      ነባሪውን መልስ
+                    </button>
+                  </div>
                 </form>
               </div>
 
@@ -4158,45 +4217,24 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
                       አከራዮች ሲመዘገቡና አድራሻ ሲቀይሩ የሚመርጧቸው አድራሻዎች እዚህ ይጨመራሉ።
                     </p>
                   </div>
-                  <input
-                    type="text"
-                    required
-                    value={jurRegion}
-                    onChange={(e) => setJurRegion(e.target.value)}
-                    placeholder="ክልል (ምሳሌ፡ ቤኒሻንጉል ጉሙዝ ክልል) *"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={jurZone}
-                    onChange={(e) => setJurZone(e.target.value)}
-                    placeholder="ዞን (ምሳሌ፡ አሶሳ ዞን / መተከል ዞን / ካማሺ ዞን) *"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={jurCity}
-                    onChange={(e) => setJurCity(e.target.value)}
-                    placeholder="ከተማ (ምሳሌ፡ አሶሳ ከተማ) *"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={jurWoreda}
-                    onChange={(e) => setJurWoreda(e.target.value)}
-                    placeholder="ወረዳ (ምሳሌ፡ ወረዳ 3) *"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={jurKebele}
-                    onChange={(e) => setJurKebele(e.target.value)}
-                    placeholder="ቀበሌ (ምሳሌ፡ ቀበሌ 09) *"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  <LocationSelector
+                    value={{
+                      region: jurRegion,
+                      zone: jurZone,
+                      city: jurCity,
+                      woreda: jurWoreda,
+                      kebele: jurKebele,
+                    }}
+                    onChange={(loc) => {
+                      setJurRegion(loc.region);
+                      setJurZone(loc.zone);
+                      setJurCity(loc.city);
+                      setJurWoreda(loc.woreda);
+                      setJurKebele(loc.kebele);
+                    }}
+                    jurisdictions={jurisdictions}
+                    lang={lang}
+                    theme="light"
                   />
                   <button
                     type="submit"
@@ -4515,9 +4553,22 @@ export const PoliceAdminPortal: React.FC<PoliceAdminPortalProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 border-b border-slate-200 pb-4">
               <div className="flex items-center gap-3 min-w-0">
                 <BrandingImage
-                  src={branding.logoDataUrl}
+                  src={resolveRegionalFlagSrc(branding.regionalFlagDataUrl)}
+                  fallbackSrc={DEFAULT_REGIONAL_FLAG_PATH}
+                  alt="Regional Flag"
+                  className="hidden sm:block w-8 h-5 rounded object-cover border border-slate-200 shrink-0"
+                />
+                <BrandingImage
+                  src={resolveLogoSrc(branding.logoDataUrl)}
+                  fallbackSrc={DEFAULT_LOGO_PATH}
                   alt="Police Logo"
-                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover border border-slate-200 shrink-0"
+                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover border border-amber-400/70 bg-white shrink-0"
+                />
+                <BrandingImage
+                  src={resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl)}
+                  fallbackSrc={DEFAULT_ETHIOPIAN_FLAG_PATH}
+                  alt="Ethiopian Flag"
+                  className="hidden sm:block w-8 h-5 rounded object-cover border border-slate-200 shrink-0"
                 />
                 <div className="min-w-0">
                   <p className="text-xs text-slate-500 truncate">{branding.commissionName}</p>

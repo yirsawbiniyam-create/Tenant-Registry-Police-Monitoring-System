@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   ArrowLeft,
@@ -20,13 +20,17 @@ import {
 } from '../services/firestoreService';
 import { registerFallbackLandlord, verifyFallbackLogin } from '../utils/localFallback';
 import {
+  DEFAULT_ETHIOPIAN_FLAG_PATH,
+  DEFAULT_LOGO_PATH,
   DEFAULT_REGION_NAME,
+  DEFAULT_REGIONAL_FLAG_PATH,
   LOGIN_SEA_MOUNTAINS_BG_PATH,
-  inferZoneForCity,
   resolveEthiopianFlagSrc,
+  resolveLogoSrc,
   resolveRegionalFlagSrc,
 } from '../utils/seedData';
 import { BrandingImage } from './BrandingImage';
+import { LocationSelector } from './LocationSelector';
 import { SmartPhotoInput } from './SmartPhotoInput';
 import { DICT, type Lang } from '../i18n';
 
@@ -281,84 +285,6 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
 
-  const regions = useMemo(
-    () =>
-      Array.from(
-        new Set(jurisdictions.map((j) => (j.region || DEFAULT_REGION_NAME).trim()).filter(Boolean))
-      ),
-    [jurisdictions]
-  );
-
-  useEffect(() => {
-    if (regions.length > 0 && !regions.includes(regRegion)) {
-      setRegRegion(regions[0]);
-    }
-  }, [regions, regRegion]);
-
-  const zones = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter((j) => !regRegion || (j.region || DEFAULT_REGION_NAME) === regRegion)
-            .map((j) => (j.zone || inferZoneForCity(j.city)).trim())
-            .filter(Boolean)
-        )
-      ),
-    [jurisdictions, regRegion]
-  );
-
-  const cities = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!regRegion || (j.region || DEFAULT_REGION_NAME) === regRegion) &&
-                (!regZone || (j.zone || inferZoneForCity(j.city)) === regZone)
-            )
-            .map((j) => j.city)
-        )
-      ),
-    [jurisdictions, regRegion, regZone]
-  );
-
-  const woredas = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!regRegion || (j.region || DEFAULT_REGION_NAME) === regRegion) &&
-                (!regZone || (j.zone || inferZoneForCity(j.city)) === regZone) &&
-                (!regCity || j.city === regCity)
-            )
-            .map((j) => j.woreda)
-        )
-      ),
-    [jurisdictions, regRegion, regZone, regCity]
-  );
-
-  const kebeles = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!regRegion || (j.region || DEFAULT_REGION_NAME) === regRegion) &&
-                (!regZone || (j.zone || inferZoneForCity(j.city)) === regZone) &&
-                (!regCity || j.city === regCity) &&
-                (!regWoreda || j.woreda === regWoreda)
-            )
-            .map((j) => j.kebele)
-        )
-      ),
-    [jurisdictions, regRegion, regZone, regCity, regWoreda]
-  );
-
   async function handleUnifiedLogin(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg('');
@@ -538,6 +464,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     }
   }
 
+  const policeLogoSrc = resolveLogoSrc(branding.logoDataUrl);
   const regionalFlagSrc = resolveRegionalFlagSrc(branding.regionalFlagDataUrl);
   const ethiopianFlagSrc = resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl);
 
@@ -556,8 +483,8 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
           className="w-full h-full object-cover object-center scale-[1.01]"
         />
 
-        {/* Subtle translucent atmosphere veil so watermarks, sea flags & colored typography stay clear */}
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/35 via-slate-950/10 to-slate-950/45" />
+        {/* Balanced atmosphere veil so watermarks, sea flags & text stay sharp */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/45 via-slate-950/20 to-slate-950/55" />
 
         {/* LEFT SEA-PLANTED TALL STEEL POLE: Admin-Configured Regional Flag */}
         <div className="absolute left-[1%] sm:left-[4%] md:left-[7%] bottom-[5%] sm:bottom-[6%] flex items-start">
@@ -565,92 +492,93 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
           <div className="mt-6 sm:mt-11 -ml-3 sm:-ml-4 origin-left animate-flag-breeze">
             <BrandingImage
               src={regionalFlagSrc}
+              fallbackSrc={DEFAULT_REGIONAL_FLAG_PATH}
               alt="Benishangul-Gumuz Regional Flag"
-              className="w-20 h-13 sm:w-44 sm:h-28 md:w-52 md:h-32 object-contain drop-shadow-[0_12px_22px_rgba(0,0,0,0.65)]"
+              className="w-20 h-13 sm:w-44 sm:h-28 md:w-52 md:h-32 object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.65)]"
             />
           </div>
         </div>
 
-        {/* RIGHT SEA-PLANTED TALL STEEL POLE: Admin-Configured Ethiopian Flag (Upright un-mirrored) */}
+        {/* RIGHT SEA-PLANTED TALL STEEL POLE: Admin-Configured Ethiopian Flag */}
         <div className="absolute right-[1%] sm:right-[4%] md:right-[7%] bottom-[5%] sm:bottom-[6%] flex flex-row-reverse items-start">
           <MetallicFlagpole idPrefix="rightSeaPole" flipHalyard />
           <div className="mt-6 sm:mt-11 -mr-3 sm:-mr-4 origin-right animate-flag-breeze">
             <BrandingImage
               src={ethiopianFlagSrc}
+              fallbackSrc={DEFAULT_ETHIOPIAN_FLAG_PATH}
               alt="Ethiopian National Flag"
-              className="w-20 h-13 sm:w-44 sm:h-28 md:w-52 md:h-32 object-contain drop-shadow-[0_12px_22px_rgba(0,0,0,0.65)]"
+              className="w-20 h-13 sm:w-44 sm:h-28 md:w-52 md:h-32 object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.65)]"
             />
           </div>
         </div>
 
-        {/* CENTER SEA-FLOATING POLICE LOGO WATERMARK */}
+        {/* CENTER SEA-FLOATING POLICE LOGO WATERMARK (Crisp & Unblurred) */}
         <div className="absolute inset-0 flex items-center justify-center translate-y-8 sm:translate-y-12">
           <div className="relative flex flex-col items-center animate-sea-float">
-            <div className="absolute inset-0 -m-6 sm:-m-10 rounded-full bg-cyan-300/20 blur-2xl" />
             <BrandingImage
-              src={branding.logoDataUrl}
+              src={policeLogoSrc}
+              fallbackSrc={DEFAULT_LOGO_PATH}
               alt=""
-              className="relative w-56 h-56 sm:w-[380px] sm:h-[380px] rounded-full object-cover opacity-45 ring-4 ring-amber-200/35 shadow-[0_0_90px_rgba(56,189,248,0.45)]"
+              className="relative w-52 h-52 sm:w-[340px] sm:h-[340px] rounded-full object-cover opacity-65 ring-2 ring-amber-300/70 shadow-[0_12px_48px_rgba(2,6,23,0.75)]"
             />
-            <div className="w-44 sm:w-72 h-5 sm:h-7 mt-3 rounded-full bg-gradient-to-r from-transparent via-cyan-200/40 to-transparent blur-md" />
+            <div className="w-40 sm:w-64 h-4 sm:h-6 mt-3 rounded-full bg-cyan-200/35 blur-md" />
           </div>
         </div>
       </div>
 
       {/* FOREGROUND CONTENT */}
-      <div className="relative z-10 max-w-xl w-full mx-auto space-y-3.5 sm:space-y-5 flex-1 flex flex-col justify-between pt-2 sm:pt-0">
+      <div className="relative z-10 max-w-xl w-full mx-auto space-y-3.5 sm:space-y-5 flex-1 flex flex-col justify-between pt-1 sm:pt-0">
         {/* Top Language Switcher */}
         <div className="flex justify-end">
           <button
             type="button"
             onClick={onToggleLang}
-            className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg bg-slate-950/55 hover:bg-slate-950/75 backdrop-blur-xs text-cyan-200 border border-cyan-300/50 text-xs font-extrabold transition-colors whitespace-nowrap shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl bg-slate-950/85 hover:bg-slate-900 text-cyan-100 border border-cyan-300/50 text-xs font-extrabold transition-colors whitespace-nowrap shadow-md"
           >
             <Globe className="w-3.5 h-3.5 text-amber-300" />
             {t.langToggle}
           </button>
         </div>
 
-        {/* 1. Dynamic Police Logo + Commission Name + Vibrant Bold System Title */}
-        <section className="bg-transparent px-2 py-1 sm:px-4 sm:py-2 text-center">
-          <div className="flex flex-col items-center space-y-2 sm:space-y-2.5">
-            <div className="p-1 sm:p-1.5 rounded-full bg-gradient-to-tr from-amber-500 via-yellow-300 to-emerald-400 shadow-lg">
+        {/* 1. Crisp High-Contrast Police Logo + Commission Name + Solid Readable Title */}
+        <section className="bg-slate-950/78 border border-amber-400/40 rounded-2xl px-4 py-4 sm:px-6 sm:py-5 text-center shadow-2xl">
+          <div className="flex flex-col items-center space-y-2.5">
+            <div className="p-1 rounded-full bg-gradient-to-tr from-amber-400 via-yellow-300 to-emerald-400 shadow-lg">
               <BrandingImage
-                src={branding.logoDataUrl}
+                src={policeLogoSrc}
+                fallbackSrc={DEFAULT_LOGO_PATH}
                 alt={branding.commissionName}
-                className="w-18 h-18 sm:w-24 sm:h-24 rounded-full object-cover bg-white/95 p-1"
+                className="w-20 h-20 sm:w-26 sm:h-26 rounded-full object-cover bg-white p-0.5"
               />
             </div>
 
-            <div className="space-y-0.5 sm:space-y-1">
-              <h2 className="text-base sm:text-2xl font-extrabold tracking-tight text-amber-300 drop-shadow-[0_2px_10px_rgba(0,0,0,0.98)]">
+            <div className="space-y-1">
+              <h2 className="text-base sm:text-xl font-extrabold tracking-tight text-yellow-300">
                 {branding.commissionName || 'የቤኒሻንጉል ጉሙዝ ክልል ፖሊስ ኮሚሽን'}
               </h2>
-              <p className="text-[11px] sm:text-sm font-extrabold tracking-wider uppercase text-cyan-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)]">
+              <p className="text-[11px] sm:text-xs font-bold tracking-wider uppercase text-cyan-200">
                 {t.commissionEn}
               </p>
             </div>
 
-            <div className="w-32 sm:w-44 h-0.5 bg-gradient-to-r from-cyan-400/70 via-amber-300 to-emerald-400/70 rounded-full" />
+            <div className="w-28 sm:w-40 h-0.5 bg-gradient-to-r from-cyan-400 via-amber-300 to-emerald-400 rounded-full" />
 
-            <div className="drop-shadow-[0_3px_12px_rgba(2,6,23,0.98)]">
-              <h1 className="text-lg sm:text-3xl md:text-4xl font-black tracking-tight bg-gradient-to-r from-amber-300 via-yellow-200 to-emerald-300 bg-clip-text text-transparent leading-snug text-balance">
-                {t.systemTitle}
-              </h1>
-            </div>
+            <h1 className="text-lg sm:text-2xl md:text-3xl font-black tracking-tight text-white leading-snug text-balance [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]">
+              {t.systemTitle}
+            </h1>
           </div>
         </section>
 
-        {/* 2. Transparent Login & Register Controls (does not obscure scenic sea/watermark/flags) */}
-        <section className="bg-slate-950/25 backdrop-blur-[2px] border border-cyan-300/25 rounded-2xl p-3.5 sm:p-6 space-y-4 shadow-xl">
+        {/* 2. Solid High-Contrast Login & Register Controls */}
+        <section className="bg-slate-950/84 border border-cyan-300/35 rounded-2xl p-4 sm:p-6 space-y-4 shadow-2xl">
 
           {errorMsg && (
-            <div className="p-3.5 bg-red-950/85 border border-red-400/60 rounded-xl text-xs sm:text-sm text-rose-200 font-bold shadow-md">
+            <div className="p-3.5 bg-red-950/95 border border-red-400/70 rounded-xl text-xs sm:text-sm text-rose-100 font-bold shadow-md">
               {errorMsg}
             </div>
           )}
           {successMsg && (
-            <div className="p-3.5 bg-emerald-950/85 border border-emerald-400/60 rounded-xl text-xs sm:text-sm text-emerald-200 font-bold shadow-md">
+            <div className="p-3.5 bg-emerald-950/95 border border-emerald-400/70 rounded-xl text-xs sm:text-sm text-emerald-100 font-bold shadow-md">
               {successMsg}
             </div>
           )}
@@ -660,7 +588,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
             <form onSubmit={handleUnifiedLogin} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                 <div>
-                  <label className="block text-xs sm:text-sm font-bold text-amber-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] mb-1.5">
+                  <label className="block text-xs sm:text-sm font-bold text-amber-200 mb-1.5">
                     {t.usernameOrPhoneLabel}
                   </label>
                   <input
@@ -670,12 +598,12 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder={t.usernameOrPhonePlaceholder}
-                    className="w-full px-3.5 py-3 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold text-slate-50 placeholder:text-slate-300/70 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300 bg-slate-950/65 focus:bg-slate-950/80 transition-colors"
+                    className="w-full px-3.5 py-3 min-h-[46px] border border-slate-500/80 rounded-xl text-sm font-semibold text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300 bg-slate-900/95 transition-colors"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs sm:text-sm font-bold text-amber-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] mb-1.5">
+                  <label className="block text-xs sm:text-sm font-bold text-amber-200 mb-1.5">
                     {t.passwordLabel}
                   </label>
                   <div className="relative">
@@ -686,7 +614,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={t.passwordPlaceholder}
-                      className="w-full pl-3.5 pr-12 py-3 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold text-slate-50 placeholder:text-slate-300/70 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300 bg-slate-950/65 focus:bg-slate-950/80 transition-colors"
+                      className="w-full pl-3.5 pr-12 py-3 min-h-[46px] border border-slate-500/80 rounded-xl text-sm font-semibold text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300 bg-slate-900/95 transition-colors"
                     />
                     <button
                       type="button"
@@ -703,7 +631,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               <button
                 type="submit"
                 disabled={busy || remainingLockSeconds > 0}
-                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 hover:from-slate-800 hover:to-blue-900 border border-amber-300/65 disabled:opacity-60 text-amber-300 font-extrabold text-sm sm:text-base rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 min-h-[48px] bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 hover:from-slate-800 hover:to-blue-900 border border-amber-300/75 disabled:opacity-60 text-amber-300 font-extrabold text-sm sm:text-base rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
               >
                 <Lock className="w-4 h-4 text-emerald-300" />
                 {remainingLockSeconds > 0
@@ -716,7 +644,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               </button>
 
               <div className="pt-2 border-t border-white/15 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs sm:text-sm">
-                <span className="font-semibold text-cyan-200 drop-shadow-[0_1px_6px_rgba(0,0,0,0.98)] text-center sm:text-left">
+                <span className="font-semibold text-cyan-200 text-center sm:text-left">
                   {t.newLandlordPrompt}
                 </span>
                 <button
@@ -808,130 +736,26 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 </div>
               </div>
 
-              {/* 5-Level Cascading Location: Region -> Zone -> City -> Woreda -> Kebele */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
-                    {t.regionLabel}
-                  </label>
-                  <select
-                    required
-                    value={regRegion}
-                    onChange={(e) => {
-                      setRegRegion(e.target.value);
-                      setRegZone('');
-                      setRegCity('');
-                      setRegWoreda('');
-                      setRegKebele('');
-                    }}
-                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
-                  >
-                    <option value="" className="bg-slate-900 text-slate-300">
-                      {t.selectRegion}
-                    </option>
-                    {regions.map((r) => (
-                      <option key={r} value={r} className="bg-slate-900 text-white">
-                        {r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
-                    {t.zoneLabel}
-                  </label>
-                  <select
-                    required
-                    value={regZone}
-                    onChange={(e) => {
-                      setRegZone(e.target.value);
-                      setRegCity('');
-                      setRegWoreda('');
-                      setRegKebele('');
-                    }}
-                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
-                  >
-                    <option value="" className="bg-slate-900 text-slate-300">
-                      {t.selectZone}
-                    </option>
-                    {zones.map((z) => (
-                      <option key={z} value={z} className="bg-slate-900 text-white">
-                        {z}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
-                    {t.cityLabel}
-                  </label>
-                  <select
-                    required
-                    value={regCity}
-                    onChange={(e) => {
-                      setRegCity(e.target.value);
-                      setRegWoreda('');
-                      setRegKebele('');
-                    }}
-                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
-                  >
-                    <option value="" className="bg-slate-900 text-slate-300">
-                      {t.selectCity}
-                    </option>
-                    {cities.map((c) => (
-                      <option key={c} value={c} className="bg-slate-900 text-white">
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
-                    {t.woredaLabel}
-                  </label>
-                  <select
-                    required
-                    value={regWoreda}
-                    onChange={(e) => {
-                      setRegWoreda(e.target.value);
-                      setRegKebele('');
-                    }}
-                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
-                  >
-                    <option value="" className="bg-slate-900 text-slate-300">
-                      {t.selectWoreda}
-                    </option>
-                    {woredas.map((w) => (
-                      <option key={w} value={w} className="bg-slate-900 text-white">
-                        {w}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-amber-200 drop-shadow-[0_1px_5px_rgba(0,0,0,0.98)] mb-1.5">
-                    {t.kebeleLabel}
-                  </label>
-                  <select
-                    required
-                    value={regKebele}
-                    onChange={(e) => setRegKebele(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[46px] border border-cyan-200/35 rounded-xl text-sm font-semibold bg-slate-950/65 text-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-300"
-                  >
-                    <option value="" className="bg-slate-900 text-slate-300">
-                      {t.selectKebele}
-                    </option>
-                    {kebeles.map((k) => (
-                      <option key={k} value={k} className="bg-slate-900 text-white">
-                        {k}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              {/* Region -> (Zone | City Administration) -> Woreda -> Kebele */}
+              <LocationSelector
+                value={{
+                  region: regRegion,
+                  zone: regZone,
+                  city: regCity,
+                  woreda: regWoreda,
+                  kebele: regKebele,
+                }}
+                onChange={(loc) => {
+                  setRegRegion(loc.region);
+                  setRegZone(loc.zone);
+                  setRegCity(loc.city);
+                  setRegWoreda(loc.woreda);
+                  setRegKebele(loc.kebele);
+                }}
+                jurisdictions={jurisdictions}
+                lang={lang}
+                theme="dark"
+              />
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
@@ -1062,12 +886,12 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
         </section>
 
-        {/* 3. Motto & Attribution Footer (bold multi-colored typography, clear lower sea) */}
-        <footer className="bg-transparent px-4 py-2 sm:px-6 sm:py-3 text-center space-y-1.5">
-          <p className="text-base sm:text-2xl font-extrabold tracking-wide text-amber-300 drop-shadow-[0_2px_10px_rgba(0,0,0,0.98)]">
+        {/* 3. Motto & Attribution Footer (crisp readable dark scrim) */}
+        <footer className="bg-slate-950/80 border border-amber-300/25 rounded-2xl px-4 py-3 sm:px-6 sm:py-3.5 text-center space-y-1 shadow-xl">
+          <p className="text-sm sm:text-xl font-extrabold tracking-wide text-amber-300">
             {t.motto}
           </p>
-          <p className="text-xs sm:text-sm font-extrabold text-emerald-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)]">
+          <p className="text-xs sm:text-sm font-bold text-emerald-300">
             {t.footerAttribution}
           </p>
         </footer>

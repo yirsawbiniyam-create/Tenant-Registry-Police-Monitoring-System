@@ -184,13 +184,24 @@ export interface AppStrings {
   periodMonthly: string;
   periodYearly: string;
   periodAll: string;
+  allZones: string;
   allCities: string;
   allWoredas: string;
   allKebeles: string;
   reportTitle: string;
+  chartZoneTitle: string;
+  chartCityTitle: string;
+  chartDateTitle: string;
   chartWoredaTitle: string;
   chartKebeleTitle: string;
   chartDailyLiveTitle: string;
+  granularityDaily: string;
+  granularityMonthly: string;
+  granularityYearly: string;
+  resetFiltersBtn: string;
+  totalRegistrationsLabel: string;
+  zoneBreakdownTitle: string;
+  clickBarHint: string;
   exportWord: string;
   exportExcel: string;
   exportPdf: string;
@@ -397,13 +408,24 @@ export const DICT: Record<Lang, AppStrings> = {
     periodMonthly: 'ወርሃዊ (30 ቀናት)',
     periodYearly: 'ዓመታዊ (365 ቀናት)',
     periodAll: 'ሁሉም ጊዜ',
+    allZones: 'ሁሉም ዞኖች',
     allCities: 'ሁሉም ከተሞች',
     allWoredas: 'ሁሉም ወረዳዎች',
     allKebeles: 'ሁሉም ቀበሌዎች',
     reportTitle: 'የአከራይ ተከራይ እና የወንጀል ክትትል ስታቲስቲክስ ሪፖርት',
-    chartWoredaTitle: 'በየወረዳው የአከራይና ተከራዮች ብዛት (Woreda Chart)',
-    chartKebeleTitle: 'በየቀበሌው የአከራይና ተከራዮች ብዛት (Kebele Chart)',
-    chartDailyLiveTitle: 'ዕለታዊ የምዝገባና የእስር እንቅስቃሴ (Live Daily Trend)',
+    chartZoneTitle: 'በየዞኑ የምዝገባ እንቅስቃሴ',
+    chartCityTitle: 'በየከተማው የምዝገባ እንቅስቃሴ',
+    chartDateTitle: 'በቀን ቅደም ተከተል የምዝገባ ሂደት',
+    chartWoredaTitle: 'በየወረዳው የአከራይና ተከራዮች ብዛት',
+    chartKebeleTitle: 'በየቀበሌው የአከራይና ተከራዮች ብዛት',
+    chartDailyLiveTitle: 'ዕለታዊ የምዝገባና የእስር እንቅስቃሴ',
+    granularityDaily: 'በቀን',
+    granularityMonthly: 'በወር',
+    granularityYearly: 'በዓመት',
+    resetFiltersBtn: 'ማጣሪያ አጽዳ',
+    totalRegistrationsLabel: 'ጠቅላላ ምዝገባ',
+    zoneBreakdownTitle: 'በየዞኑ የአከራይና ተከራዮች ማጠቃለያ',
+    clickBarHint: 'ለማጣራት በግራፉ ላይ ያለውን ዞን ወይም ከተማ ይጫኑ',
     exportWord: 'Word (.docx)',
     exportExcel: 'Excel (.xlsx)',
     exportPdf: 'PDF (.pdf)',
@@ -607,13 +629,24 @@ export const DICT: Record<Lang, AppStrings> = {
     periodMonthly: 'Monthly (30 Days)',
     periodYearly: 'Yearly (365 Days)',
     periodAll: 'All Time',
+    allZones: 'All Zones',
     allCities: 'All Cities',
     allWoredas: 'All Woredas',
     allKebeles: 'All Kebeles',
     reportTitle: 'Landlord-Tenant & Crime Monitoring Statistical Report',
+    chartZoneTitle: 'Registration Trends by Zone',
+    chartCityTitle: 'Registration Trends by City',
+    chartDateTitle: 'Registration Trends by Date',
     chartWoredaTitle: 'Landlords & Tenants by Woreda',
     chartKebeleTitle: 'Landlords & Tenants by Kebele',
-    chartDailyLiveTitle: 'Live Daily Registrations & Arrests',
+    chartDailyLiveTitle: 'Registrations & Arrests Over Time',
+    granularityDaily: 'Daily',
+    granularityMonthly: 'Monthly',
+    granularityYearly: 'Yearly',
+    resetFiltersBtn: 'Reset Filters',
+    totalRegistrationsLabel: 'Total Registrations',
+    zoneBreakdownTitle: 'Registration Summary by Zone',
+    clickBarHint: 'Click any zone or city bar to drill down',
     exportWord: 'Word (.docx)',
     exportExcel: 'Excel (.xlsx)',
     exportPdf: 'PDF (.pdf)',

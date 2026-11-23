@@ -60,7 +60,6 @@ const ComboOrCustomField: React.FC<ComboOrCustomFieldProps> = ({
     () => !hasOptions || preferCustomByDefault || valueOutsideList
   );
 
-  // Sync mode smoothly if parent options list empties out or if an external value outside presets is loaded
   useEffect(() => {
     if (!hasOptions) {
       setCustomMode(true);
@@ -212,7 +211,6 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
 
   const [adminLevel, setAdminLevel] = useState<AdminLevelChoice>(inferInitialLevel);
 
-  // Sync adminLevel cleanly when parent resets or loads an existing record
   useEffect(() => {
     if (value.city && value.zone && value.city === value.zone && isZonePresetName(value.zone)) {
       setAdminLevel('zone');
@@ -237,7 +235,6 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
     const fromJur = jurisdictions
       .filter((j) => {
         const regMatch = !value.region || (j.region || DEFAULT_REGION_NAME) === value.region;
-        // Do not mix zone-only placeholder cities into City Administration dropdown unless non-zone city
         return regMatch && j.city && j.city !== j.zone && !isZonePresetName(j.city);
       })
       .map((j) => j.city.trim());

@@ -27,7 +27,17 @@ import {
   toJsDate,
   verifyPassword,
 } from '../utils/crypto';
-import { DEFAULT_REGION_NAME, OCCUPATION_OPTIONS, inferZoneForCity } from '../utils/seedData';
+import {
+  DEFAULT_ETHIOPIAN_FLAG_PATH,
+  DEFAULT_LOGO_PATH,
+  DEFAULT_REGION_NAME,
+  DEFAULT_REGIONAL_FLAG_PATH,
+  OCCUPATION_OPTIONS,
+  inferZoneForCity,
+  resolveEthiopianFlagSrc,
+  resolveLogoSrc,
+  resolveRegionalFlagSrc,
+} from '../utils/seedData';
 import {
   markTenantMovedOut,
   registerLandlord,
@@ -43,6 +53,7 @@ import {
   updateFallbackLandlordAddress,
 } from '../utils/localFallback';
 import { BrandingImage } from './BrandingImage';
+import { LocationSelector } from './LocationSelector';
 import { SmartPhotoInput } from './SmartPhotoInput';
 import { DICT, type Lang } from '../i18n';
 
@@ -212,74 +223,6 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     [tenants, replacedTenantId]
   );
 
-  const regions = useMemo(
-    () =>
-      Array.from(
-        new Set(jurisdictions.map((j) => (j.region || DEFAULT_REGION_NAME).trim()).filter(Boolean))
-      ),
-    [jurisdictions]
-  );
-  const zones = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter((j) => !addrRegion || (j.region || DEFAULT_REGION_NAME) === addrRegion)
-            .map((j) => (j.zone || inferZoneForCity(j.city)).trim())
-            .filter(Boolean)
-        )
-      ),
-    [jurisdictions, addrRegion]
-  );
-  const cities = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!addrRegion || (j.region || DEFAULT_REGION_NAME) === addrRegion) &&
-                (!addrZone || (j.zone || inferZoneForCity(j.city)) === addrZone)
-            )
-            .map((j) => j.city)
-        )
-      ),
-    [jurisdictions, addrRegion, addrZone]
-  );
-  const woredas = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!addrRegion || (j.region || DEFAULT_REGION_NAME) === addrRegion) &&
-                (!addrZone || (j.zone || inferZoneForCity(j.city)) === addrZone) &&
-                (!addrCity || j.city === addrCity)
-            )
-            .map((j) => j.woreda)
-        )
-      ),
-    [jurisdictions, addrRegion, addrZone, addrCity]
-  );
-  const kebeles = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!addrRegion || (j.region || DEFAULT_REGION_NAME) === addrRegion) &&
-                (!addrZone || (j.zone || inferZoneForCity(j.city)) === addrZone) &&
-                (!addrCity || j.city === addrCity) &&
-                (!addrWoreda || j.woreda === addrWoreda)
-            )
-            .map((j) => j.kebele)
-        )
-      ),
-    [jurisdictions, addrRegion, addrZone, addrCity, addrWoreda]
-  );
-
   function handleAddCoResident() {
     const val = coResidentInput.trim();
     if (!val || coResidents.length >= 20) return;
@@ -368,16 +311,24 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
 
   async function handleSaveAddressChange(e: React.FormEvent) {
     e.preventDefault();
+    if (!addrRegion.trim() || !addrCity.trim() || !addrWoreda.trim() || !addrKebele.trim()) {
+      setErrorMsg(
+        lang === 'am'
+          ? 'እባክዎ ክልል፣ ዞን ወይም ከተማ አስተዳደር፣ ወረዳ እና ቀበሌ ይሙሉ።'
+          : 'Please complete region, zone or city administration, woreda, and kebele.'
+      );
+      return;
+    }
     setBusy(true);
     setErrorMsg('');
     setSuccessMsg('');
     try {
       const addressUpdates = {
-        region: addrRegion,
-        zone: addrZone,
-        city: addrCity,
-        woreda: addrWoreda,
-        kebele: addrKebele,
+        region: addrRegion.trim(),
+        zone: (addrZone || inferZoneForCity(addrCity)).trim(),
+        city: addrCity.trim(),
+        woreda: addrWoreda.trim(),
+        kebele: addrKebele.trim(),
         houseNumber: addrHouseNo,
         roomCount: Number(addrRooms) || 1,
         phone: addrPhone,
@@ -496,70 +447,6 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
     }
   }
 
-  const newPropZones = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter((j) => !newPropRegion || (j.region || DEFAULT_REGION_NAME) === newPropRegion)
-            .map((j) => (j.zone || inferZoneForCity(j.city)).trim())
-            .filter(Boolean)
-        )
-      ),
-    [jurisdictions, newPropRegion]
-  );
-
-  const newPropCities = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!newPropRegion || (j.region || DEFAULT_REGION_NAME) === newPropRegion) &&
-                (!newPropZone || (j.zone || inferZoneForCity(j.city)) === newPropZone)
-            )
-            .map((j) => j.city)
-        )
-      ),
-    [jurisdictions, newPropRegion, newPropZone]
-  );
-
-  const newPropWoredas = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!newPropRegion || (j.region || DEFAULT_REGION_NAME) === newPropRegion) &&
-                (!newPropZone || (j.zone || inferZoneForCity(j.city)) === newPropZone) &&
-                (!newPropCity || j.city === newPropCity)
-            )
-            .map((j) => j.woreda)
-        )
-      ),
-    [jurisdictions, newPropRegion, newPropZone, newPropCity]
-  );
-
-  const newPropKebeles = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          jurisdictions
-            .filter(
-              (j) =>
-                (!newPropRegion || (j.region || DEFAULT_REGION_NAME) === newPropRegion) &&
-                (!newPropZone || (j.zone || inferZoneForCity(j.city)) === newPropZone) &&
-                (!newPropCity || j.city === newPropCity) &&
-                (!newPropWoreda || j.woreda === newPropWoreda)
-            )
-            .map((j) => j.kebele)
-        )
-      ),
-    [jurisdictions, newPropRegion, newPropZone, newPropCity, newPropWoreda]
-  );
-
   const filteredHistory = useMemo(() => {
     if (historyFilter === 'tenants') {
       return history.filter((h) => h.actionType === 'tenant_registered' || h.actionType === 'tenant_moved_out');
@@ -582,11 +469,24 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
       {/* 3-Zone Top Header */}
       <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-6">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <BrandingImage
-              src={branding.logoDataUrl}
+              src={resolveRegionalFlagSrc(branding.regionalFlagDataUrl)}
+              fallbackSrc={DEFAULT_REGIONAL_FLAG_PATH}
+              alt="Regional Flag"
+              className="hidden sm:block w-8 h-5 rounded object-cover border border-slate-200 shrink-0"
+            />
+            <BrandingImage
+              src={resolveLogoSrc(branding.logoDataUrl)}
+              fallbackSrc={DEFAULT_LOGO_PATH}
               alt={branding.commissionName}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-slate-200 shrink-0"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-amber-400/70 bg-white shadow-xs shrink-0"
+            />
+            <BrandingImage
+              src={resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl)}
+              fallbackSrc={DEFAULT_ETHIOPIAN_FLAG_PATH}
+              alt="Ethiopian Flag"
+              className="hidden sm:block w-8 h-5 rounded object-cover border border-slate-200 shrink-0"
             />
             <span className="text-xs sm:text-base font-bold text-slate-900 whitespace-nowrap truncate">
               {branding.commissionName}
@@ -695,11 +595,37 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Ornamental System Title Banner */}
-        <section className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border border-amber-500/30 rounded-2xl px-4 py-4 sm:px-6 sm:py-5 text-center shadow-sm">
-          <h2 className="text-lg sm:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-emerald-300">
-            {t.systemTitle}
-          </h2>
-          <p className="text-xs sm:text-sm text-cyan-300 font-bold mt-1">{branding.commissionName}</p>
+        <section className="bg-slate-950 border border-amber-400/40 rounded-2xl px-4 py-4 sm:px-6 sm:py-5 shadow-md flex items-center justify-between gap-3 sm:gap-5">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <BrandingImage
+              src={resolveRegionalFlagSrc(branding.regionalFlagDataUrl)}
+              fallbackSrc={DEFAULT_REGIONAL_FLAG_PATH}
+              alt="Regional Flag"
+              className="w-10 h-6 sm:w-12 sm:h-8 rounded object-cover border border-white/25 shadow-sm"
+            />
+            <BrandingImage
+              src={resolveLogoSrc(branding.logoDataUrl)}
+              fallbackSrc={DEFAULT_LOGO_PATH}
+              alt={branding.commissionName}
+              className="w-11 h-11 sm:w-14 sm:h-14 rounded-full object-cover border-2 border-amber-400 bg-white shadow-md"
+            />
+          </div>
+          <div className="text-center min-w-0 flex-1">
+            <h2 className="text-base sm:text-2xl font-black tracking-normal text-white leading-snug">
+              {t.systemTitle}
+            </h2>
+            <p className="text-xs sm:text-sm text-amber-300 font-bold mt-1 truncate">
+              {branding.commissionName}
+            </p>
+          </div>
+          <div className="shrink-0">
+            <BrandingImage
+              src={resolveEthiopianFlagSrc(branding.ethiopianFlagDataUrl)}
+              fallbackSrc={DEFAULT_ETHIOPIAN_FLAG_PATH}
+              alt="Ethiopian Flag"
+              className="w-10 h-6 sm:w-12 sm:h-8 rounded object-cover border border-white/25 shadow-sm"
+            />
+          </div>
         </section>
 
         {/* Strict Private Landlord Summary Strip (Own Data Only) */}
@@ -1244,119 +1170,25 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               </div>
 
               <form onSubmit={handleSaveAddressChange} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.regionLabel}
-                    </label>
-                    <select
-                      required
-                      value={addrRegion}
-                      onChange={(e) => {
-                        setAddrRegion(e.target.value);
-                        setAddrZone('');
-                        setAddrCity('');
-                        setAddrWoreda('');
-                        setAddrKebele('');
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectRegion}</option>
-                      {regions.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.zoneLabel}
-                    </label>
-                    <select
-                      required
-                      value={addrZone}
-                      onChange={(e) => {
-                        setAddrZone(e.target.value);
-                        setAddrCity('');
-                        setAddrWoreda('');
-                        setAddrKebele('');
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectZone}</option>
-                      {zones.map((z) => (
-                        <option key={z} value={z}>
-                          {z}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.cityLabel}
-                    </label>
-                    <select
-                      required
-                      value={addrCity}
-                      onChange={(e) => {
-                        setAddrCity(e.target.value);
-                        setAddrWoreda('');
-                        setAddrKebele('');
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectCity}</option>
-                      {cities.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.woredaLabel}
-                    </label>
-                    <select
-                      required
-                      value={addrWoreda}
-                      onChange={(e) => {
-                        setAddrWoreda(e.target.value);
-                        setAddrKebele('');
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectWoreda}</option>
-                      {woredas.map((w) => (
-                        <option key={w} value={w}>
-                          {w}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.kebeleLabel}
-                    </label>
-                    <select
-                      required
-                      value={addrKebele}
-                      onChange={(e) => setAddrKebele(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectKebele}</option>
-                      {kebeles.map((k) => (
-                        <option key={k} value={k}>
-                          {k}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                <LocationSelector
+                  value={{
+                    region: addrRegion,
+                    zone: addrZone,
+                    city: addrCity,
+                    woreda: addrWoreda,
+                    kebele: addrKebele,
+                  }}
+                  onChange={(loc) => {
+                    setAddrRegion(loc.region);
+                    setAddrZone(loc.zone);
+                    setAddrCity(loc.city);
+                    setAddrWoreda(loc.woreda);
+                    setAddrKebele(loc.kebele);
+                  }}
+                  jurisdictions={jurisdictions}
+                  lang={lang}
+                  theme="light"
+                />
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
@@ -1421,119 +1253,25 @@ export const LandlordPortal: React.FC<LandlordPortalProps> = ({
               </div>
 
               <form onSubmit={handleAddAdditionalProperty} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.regionLabel}
-                    </label>
-                    <select
-                      required
-                      value={newPropRegion}
-                      onChange={(e) => {
-                        setNewPropRegion(e.target.value);
-                        setNewPropZone('');
-                        setNewPropCity('');
-                        setNewPropWoreda('');
-                        setNewPropKebele('');
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectRegion}</option>
-                      {regions.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.zoneLabel}
-                    </label>
-                    <select
-                      required
-                      value={newPropZone}
-                      onChange={(e) => {
-                        setNewPropZone(e.target.value);
-                        setNewPropCity('');
-                        setNewPropWoreda('');
-                        setNewPropKebele('');
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectZone}</option>
-                      {newPropZones.map((z) => (
-                        <option key={z} value={z}>
-                          {z}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.cityLabel}
-                    </label>
-                    <select
-                      required
-                      value={newPropCity}
-                      onChange={(e) => {
-                        setNewPropCity(e.target.value);
-                        setNewPropWoreda('');
-                        setNewPropKebele('');
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectCity}</option>
-                      {newPropCities.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.woredaLabel}
-                    </label>
-                    <select
-                      required
-                      value={newPropWoreda}
-                      onChange={(e) => {
-                        setNewPropWoreda(e.target.value);
-                        setNewPropKebele('');
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectWoreda}</option>
-                      {newPropWoredas.map((w) => (
-                        <option key={w} value={w}>
-                          {w}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      {t.kebeleLabel}
-                    </label>
-                    <select
-                      required
-                      value={newPropKebele}
-                      onChange={(e) => setNewPropKebele(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">{t.selectKebele}</option>
-                      {newPropKebeles.map((k) => (
-                        <option key={k} value={k}>
-                          {k}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                <LocationSelector
+                  value={{
+                    region: newPropRegion,
+                    zone: newPropZone,
+                    city: newPropCity,
+                    woreda: newPropWoreda,
+                    kebele: newPropKebele,
+                  }}
+                  onChange={(loc) => {
+                    setNewPropRegion(loc.region);
+                    setNewPropZone(loc.zone);
+                    setNewPropCity(loc.city);
+                    setNewPropWoreda(loc.woreda);
+                    setNewPropKebele(loc.kebele);
+                  }}
+                  jurisdictions={jurisdictions}
+                  lang={lang}
+                  theme="light"
+                />
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
